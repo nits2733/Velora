@@ -1344,12 +1344,17 @@ feature, but isn't built yet. `"/api/professionals/**"` sits in
 `SecurityConfig.PUBLIC_GET_ENDPOINTS` alongside `/api/portfolio/**` and
 `/api/categories/**` — same public-browsing intent.
 
-**No write path yet:** unlike almost every other entity in this codebase, there is
-currently no create/update/delete endpoint for `PortfolioItem` at all — every row
-today came from `V2__seed_data.sql`. This is a deliberate scope boundary of the
-`Design`→`PortfolioItem` generalization phase: it reshaped the read-side catalog and
-schema so any trade *could* have a portfolio item, but building the actual "a
-professional uploads their own work sample" endpoint is separate, later work.
+**Write path — upload:** `POST /api/portfolio`, `@PreAuthorize("hasRole('PROFESSIONAL')")`,
+takes a `CreatePortfolioItemRequest` (`title`, `description`, `categoryId`,
+`coverImageUrl`, optional `styleTag`, optional `priceEstimate`). `PortfolioItemService.create`
+looks up the caller (from `UserPrincipal.getId()`, not a client-supplied id — a
+professional can only upload under their own account) and the category, builds the
+`PortfolioItem`, and — only if `styleTag` or `priceEstimate` was supplied — attaches a
+`InteriorDesignDetails` built with `.portfolioItem(item)` set so the owning side of the
+`@OneToOne` is populated before save; `CascadeType.ALL` on `PortfolioItem.interiorDesignDetails`
+persists both rows in one `save()` call. Omitting both fields leaves a plain item with no
+satellite row at all — the same shape a seeded plumber/painter item already has. There is
+still no update or delete endpoint for portfolio items.
 
 ---
 
@@ -2150,6 +2155,7 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | PUT | `/api/users/profile` | Yes | — | Update the current user's own profile, incl. availability toggle (partial update) |
 | GET | `/api/portfolio` | No | — | Search/browse the portfolio catalog (paginated, filterable) |
 | GET | `/api/portfolio/{id}` | No | — | Get one portfolio item's full details |
+| POST | `/api/portfolio` | Yes | PROFESSIONAL | Upload a new portfolio item under the caller's own account |
 | GET | `/api/categories` | No | — | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
 | GET | `/api/professionals/{id}` | No | — | Get one professional's public profile (bio, experience, availability, rating) |
 | POST | `/api/bookings` | Yes | CUSTOMER | Book a Full Home Services project (chosen professional, or none — assignment-requested) or an Individual Service request (always assignment-requested) |

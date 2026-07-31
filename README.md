@@ -118,19 +118,18 @@ before deploying.
 | Auth | Register (customer/professional only), login, JWT issuance, password hashing (BCrypt) |
 | User | Get/update own profile — customer, or professional (bio/specialization/city/availability/rating) |
 | Professional (public) | Single-professional public profile lookup by id (bio, experience, availability, rating) |
-| Portfolio | Categories, professional work-sample catalog with search/filter/pagination, item detail |
+| Portfolio | Categories, professional work-sample catalog with search/filter/pagination/upload, item detail |
 | Booking | Book a Full Home Services project (direct professional pick, or request Velora to assign one) or an Individual Service request (always Velora-assigned) |
 | Professional Matching | Admin-only: rank candidate professionals for an assignment-requested booking |
 | Quotation | Post-consultation itemized estimate: draft → send → customer accepts/rejects |
 | Review | One rating (1-5) + comment per completed booking; recomputes the professional's aggregate rating |
 
 Explicitly **out of scope** so far: project execution/scheduling, milestones,
-payments (Razorpay), notifications (Firebase), Cloudinary image upload, Google Maps,
-refresh tokens, OTP, password reset, a real professional-availability calendar (today
-it's a simple self-toggled flag), a searchable professional directory (today it's
-single-profile lookup by id only), and a write path for creating/uploading portfolio
-items (today's catalog is seed data only — see
-[Design Notes / Extensibility](#design-notes--extensibility)).
+payments (Razorpay), notifications (Firebase), Cloudinary image upload (portfolio
+items accept an image *URL* today, not a file), Google Maps, refresh tokens, OTP,
+password reset, a real professional-availability calendar (today it's a simple
+self-toggled flag), and a searchable professional directory (today it's
+single-profile lookup by id only).
 
 ## API Reference
 
@@ -154,12 +153,13 @@ All endpoints are prefixed `/api`. Protected endpoints require
 |---|---|---|
 | GET | `/professionals/{id}` | Get one professional's public profile |
 
-### Portfolio Catalog (public read)
-| Method | Path | Description |
-|---|---|---|
-| GET | `/categories` | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
-| GET | `/portfolio?category=&search=&style=&page=&size=&sortBy=&direction=` | Paginated/filterable portfolio catalog |
-| GET | `/portfolio/{id}` | Portfolio item detail |
+### Portfolio Catalog
+| Method | Path | Role | Description |
+|---|---|---|---|
+| GET | `/categories` | public | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
+| GET | `/portfolio?category=&search=&style=&page=&size=&sortBy=&direction=` | public | Paginated/filterable portfolio catalog |
+| GET | `/portfolio/{id}` | public | Portfolio item detail |
+| POST | `/portfolio` | PROFESSIONAL | Upload a new portfolio item under the caller's own account; `styleTag`/`priceEstimate` are optional — supplying either creates the item's `InteriorDesignDetails` satellite, omitting both leaves it a plain generic item |
 
 ### Bookings (authenticated)
 | Method | Path | Role | Description |
@@ -224,10 +224,9 @@ migration, is a new `V{n}__description.sql` file.
   a new pattern, a generic JSON metadata blob (which would break this codebase's
   zero-`@Query`, fully-typed-and-filterable convention), or JPA inheritance (more
   complexity than the domain currently needs).
-- There is currently **no write path** for portfolio items — no
-  create/update/delete-portfolio-item endpoint exists yet. Every row in
-  `portfolio_items` today comes from `V2__seed_data.sql`. Letting a professional
-  upload their own work samples is a natural next phase, not part of what's built.
+- A professional can upload their own portfolio items (`POST /portfolio`) — but there's
+  still no update/delete endpoint yet, so a mis-entered item can't be corrected or
+  removed via the API today.
 - Portfolio images are plain URL strings (`cover_image_url`) for now — swap for a
   Cloudinary-backed upload flow later without changing `PortfolioItem`'s public shape.
 - Portfolio items are never directly purchasable — a booking only optionally
