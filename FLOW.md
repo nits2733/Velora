@@ -16,6 +16,52 @@ A plain-language walkthrough of how the whole system works, start to finish, wit
 
 If any step along the way fails, the whole application refuses to start — nothing runs in a half-broken state.
 
+**Flow diagram:**
+
+```
+App process starts
+        │
+        ▼
+Load config from .env / environment variables
+        │
+        ▼
+Validate JWT secret
+        │
+        ├── Missing or too short
+        │         │
+        │         ▼
+        │   Abort startup (fail fast, clear error)
+        │
+        ▼
+Connect to database
+        │
+        ▼
+Flyway: compare migration history vs. migration files
+        │
+        ▼
+Apply any pending migrations, in order
+        │
+        ▼
+JPA validates entity classes match actual DB schema
+        │
+        ├── Mismatch
+        │      │
+        │      ▼
+        │   Abort startup
+        │
+        ▼
+Wire up security rules
+  • Public vs. protected URLs
+  • CORS policy
+  • Password hashing strategy
+        │
+        ▼
+Start web server, begin listening
+        │
+        ▼
+Application ready to accept requests
+```
+
 ---
 
 ## 2. Registration Flow
@@ -30,6 +76,48 @@ If any step along the way fails, the whole application refuses to start — noth
 8. Immediately after the account is created, the system generates a signed access token for the brand-new user, so they're logged in right away without needing a separate login step straight after signing up.
 9. The response sent back contains that access token plus the basic account details (id, email, name, role) — everything the client-side app needs to consider the user "logged in" from this point forward.
 
+**Flow diagram:**
+
+```
+Client sends email, password, fullName, phone, role
+        │
+        ▼
+Validate input shape (format, length, required fields)
+        │
+        ├── Invalid
+        │      │
+        │      ▼
+        │   400 Bad Request (field-by-field errors)
+        │
+        ▼
+Normalize email (trim + lowercase)
+        │
+        ▼
+Does an account with this email already exist?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Hash the password
+        │
+        ▼
+Save new user record
+        │
+        ├── role == DESIGNER
+        │         │
+        │         ▼
+        │   Create empty designer profile, linked to user
+        │
+        ▼
+Generate signed JWT access token
+        │
+        ▼
+201 Created + access token + basic user info
+```
+
 ---
 
 ## 3. Login Flow
@@ -41,6 +129,39 @@ If any step along the way fails, the whole application refuses to start — noth
 5. If the password does match, a brand-new signed access token is generated for this login session. Each login produces its own fresh token with its own expiry countdown — logging in again later doesn't reuse an old one.
 6. The response returned is identical in shape to the registration response: access token plus basic account details.
 7. From here, the client is expected to store this token and attach it to every future request that needs to prove who's making it.
+
+**Flow diagram:**
+
+```
+Client sends email + password
+        │
+        ▼
+Normalize email
+        │
+        ▼
+Look up account by email
+        │
+        ▼
+Compare submitted password against stored hash
+        │
+        ├── No account found, or password doesn't match
+        │         │
+        │         ▼
+        │   401 "Invalid email or password"
+        │   (deliberately vague — never says which part was wrong)
+        │
+        ▼
+Password matches
+        │
+        ▼
+Generate a fresh signed JWT access token
+        │
+        ▼
+200 OK + access token + basic user info
+        │
+        ▼
+Client stores token, attaches it to future requests
+```
 
 ---
 
@@ -60,6 +181,67 @@ This flow happens on every single request, whether it ends up being allowed or n
 10. Some endpoints go one step further and require not just "any logged-in user" but a specific kind of user — customer-only or designer-only actions. If the logged-in user's role doesn't match what's required, the request is stopped and rejected with a "forbidden" response, distinct from the plain "unauthorized" one.
 11. Only once all of the above passes does the request actually reach the feature-specific logic described in the flows below.
 
+**Flow diagram:**
+
+```
+Client sends request
+        │
+        ▼
+Read Authorization header
+        │
+        ├── Missing or invalid format
+        │         │
+        │         ▼
+        │   Treat as Anonymous
+        │
+        ▼
+Extract Bearer token
+        │
+        ▼
+Read email from JWT
+        │
+        ▼
+Load latest user from database
+        │
+        ▼
+Validate:
+  • Signature
+  • Expiry
+  • User exists
+  • Email matches
+        │
+   ┌────┴────┐
+   │         │
+ Invalid   Valid
+   │         │
+   ▼         ▼
+Anonymous  Authenticated User
+             │
+             ▼
+Check endpoint security
+             │
+     ┌───────┴────────┐
+     │                │
+ Public          Login Required
+     │                │
+     ▼                ▼
+Allow         Authenticated?
+                    │
+            ┌───────┴────────┐
+            │                │
+           No               Yes
+            │                │
+            ▼                ▼
+     401 Unauthorized   Check Role
+                              │
+                     ┌────────┴────────┐
+                     │                 │
+                Wrong Role       Correct Role
+                     │                 │
+                     ▼                 ▼
+             403 Forbidden      Controller Executes
+```
+
 ---
 
 ## 5. General Request Lifecycle (Any Endpoint)
@@ -77,6 +259,49 @@ This is the shape every single feature request follows, regardless of which spec
 6. Before anything goes back to the client, the internal database records are reshaped into a clean, deliberately limited response format. Sensitive or irrelevant internal details — like password hashes, or raw database relationship structures — are never included in what goes out.
 7. Finally, a response is sent back with an appropriate status: a success code with the requested/created data, or one of a small set of well-defined error responses (covered in the error-handling flow below), so the caller always knows exactly what happened.
 
+**Flow diagram:**
+
+```
+Request arrives
+        │
+        ▼
+Security checkpoint (if endpoint is protected — see Section 4)
+        │
+        ▼
+Read input: path variables / query params / JSON body
+        │
+        ▼
+Validate input shape
+        │
+        ├── Invalid
+        │      │
+        │      ▼
+        │   400 Bad Request (detailed field errors)
+        │
+        ▼
+Hand off to business logic layer, with caller identity
+        │
+        ▼
+Business logic:
+  • Fetch needed records
+  • Apply ownership / status / role / uniqueness rules
+        │
+        ├── Rule violated
+        │      │
+        │      ▼
+        │   Specific error (404 / 403 / 409 / ...)
+        │
+        ▼
+Perform the change, or read the data
+        │
+        ▼
+Map entity/entities → response DTO
+  (internal-only fields like password hashes never included)
+        │
+        ▼
+Return response with appropriate status code
+```
+
 ---
 
 ## 6. Design Catalog Browsing Flow
@@ -89,6 +314,56 @@ This is the shape every single feature request follows, regardless of which spec
 6. What comes back is a "page" of results: the actual matching items for this page, plus metadata describing where you are — current page number, how many items per page, how many total matching items exist, and how many total pages there are. Every paginated feature in this API (catalog browsing, bookings list) uses this exact same page-shaped response, so a client only has to learn this pattern once.
 7. Catalog list results are intentionally lightweight — just enough to render a card (title, category name, cover image, price, style) — not the full description, to keep list responses fast and small.
 8. Viewing a single design by its id returns the fuller picture instead: full description, full category details, and who the designer is. If no design exists with that id, the request is rejected as "not found."
+
+**Flow diagram:**
+
+```
+Client requests GET /api/designs
+ (optional: category, search, style, page, size, sortBy, direction)
+        │
+        ▼
+Clamp page size to the allowed maximum
+        │
+        ▼
+Whitelist the sort field (unknown field → falls back to default)
+        │
+        ▼
+Build filters — only for parameters actually supplied
+        │
+        ├── category given → filter by category
+        ├── search given   → filter by title/description match
+        ├── style given    → filter by style tag
+        │      (any combination, or none at all)
+        │
+        ▼
+Run one combined query, plus a total-count query
+        │
+        ▼
+Map each result to a lightweight summary (card-sized fields)
+        │
+        ▼
+Wrap results in a page envelope (content + paging metadata)
+        │
+        ▼
+200 OK
+
+
+Client requests GET /api/designs/{id}
+        │
+        ▼
+Look up design by id
+        │
+        ├── Not found
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Map to full detail response (description, category, designer)
+        │
+        ▼
+200 OK
+```
 
 ---
 
@@ -109,9 +384,175 @@ This is the shape every single feature request follows, regardless of which spec
     - Once a booking is cancelled or completed, it's considered final — no further status changes are permitted from either side, ever.
 11. Any attempt to skip a stage, move backward, change a finished booking, or act on a booking that isn't yours is rejected with a clear explanation of exactly why.
 
+**Flow diagram:**
+
+```
+Customer requests a new booking
+ (designerId, scheduledAt, optional designId, notes)
+        │
+        ▼
+Is the target user actually a DESIGNER?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   400 Bad Request
+        │
+        ▼
+Was a specific design included?
+        │
+        ├── Yes → does it belong to that designer?
+        │              │
+        │              ├── No
+        │              │      │
+        │              │      ▼
+        │              │   400 Bad Request
+        │              ▼
+        │            OK
+        │
+        ▼
+Create booking with status PENDING
+        │
+        ▼
+201 Created
+
+
+Booking action requested (view / cancel / update status)
+        │
+        ▼
+Load booking by id
+        │
+        ├── Not found
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Is the requester an allowed participant?
+ • view      → must be the customer OR the designer on it
+ • cancel    → must be THE customer on it
+ • status    → must be THE designer on it
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+(For cancel/status) Is this transition allowed from the current status?
+  PENDING   → CONFIRMED or CANCELLED
+  CONFIRMED → COMPLETED or CANCELLED
+  CANCELLED / COMPLETED → nothing (final)
+        │
+        ├── Not allowed
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Apply the change
+        │
+        ▼
+200 OK
+```
+
 ---
 
-## 8. Profile Flow
+## 8. Quotation Flow
+
+1. A booking on its own never carries a price — it just gets a designer and customer talking. A quotation is the separate thing that turns that consultation into an actual, priced scope of work: a list of line items and a total cost, which the customer then has to explicitly accept or reject.
+2. Only the designer assigned to a booking can build or edit its quotation. They add line items — each one a description and an amount, optionally broken down further into quantity, unit, and unit price for a fully itemized breakdown — and the system automatically adds them all up into a running total. Nobody ever types in a total by hand; it's always recalculated from the line items themselves, so it can never drift out of sync with what's actually listed.
+3. While a quotation is still being put together, it sits in a draft stage. The designer can keep changing it freely — every save simply replaces the whole line-item list with whatever was just submitted, so there's no need to track individual additions or removals.
+4. Once a quotation has been sent to the customer, it can no longer be edited. If it needs to change after that point, that specific quotation's story is over — there's no "unsend" or "revise" step in this version. This is a deliberate simplification: better to keep the lifecycle simple and predictable for now than to support editing history.
+5. A quotation can't be sent with nothing in it — at least one line item is required before it's allowed to leave the draft stage. This isn't checked at the same time as the basic shape of the request; it's checked specifically at the moment of sending, because an empty quotation is perfectly fine to exist temporarily while it's still being drafted.
+6. Once sent, only the customer on that specific booking can respond to it — and only while it's still in the "sent" stage. They can either accept it, moving it to its final approved state, or reject it, moving it to its final declined state. Once either of those happens, the quotation is done; there's no going back to sent or draft.
+7. Anyone not involved in the booking — not the customer, not the designer — has no access to view or act on its quotation at all. And within the two people who are involved, each side is restricted to only the actions that make sense for their role: the designer can build and send, but never accept or reject; the customer can only respond to what's been sent, never edit it themselves.
+
+**Flow diagram:**
+
+```
+Designer builds a quotation for a booking
+ (description + amount per line item, optionally quantity/unit/unit price too)
+        │
+        ▼
+Is the requester the designer assigned to this booking?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+Has this quotation already been sent, accepted, or rejected?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   409 Conflict (can no longer be edited)
+        │
+        ▼
+Replace the entire line-item list with what was just submitted
+        │
+        ▼
+Recalculate the total from the line items (never trusted from the client)
+        │
+        ▼
+200 OK — saved as DRAFT
+
+
+Designer sends the quotation to the customer
+        │
+        ▼
+Is it currently a draft?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Does it have at least one line item?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   400 Bad Request
+        │
+        ▼
+Mark as SENT
+        │
+        ▼
+200 OK
+
+
+Customer accepts or rejects the quotation
+        │
+        ▼
+Is the requester the customer on this booking?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+Is the quotation currently SENT?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Mark as ACCEPTED or REJECTED (final either way)
+        │
+        ▼
+200 OK
+```
+
+---
+
+## 9. Profile Flow
 
 1. A logged-in user can view their own profile — always their own; there is no way to look up someone else's profile through this endpoint.
 2. The response always includes the shared basic details every account has: id, email, name, phone, role, and when the account was created.
@@ -121,18 +562,92 @@ This is the shape every single feature request follows, regardless of which spec
 6. The designer-specific fields (bio, experience, specialization, city) only ever take effect if the logged-in user is actually a designer. If a customer's update request happens to include any of those fields anyway, they're quietly ignored rather than causing an error — there's simply no designer profile record for them to apply to.
 7. If a designer updates their profile before ever having filled anything in, the missing designer-profile record is created automatically at that moment, rather than requiring a separate "set up your designer profile" step first.
 
+**Flow diagram:**
+
+```
+GET /api/users/profile
+        │
+        ▼
+Load current user (identity taken from the token, never from input)
+        │
+        ▼
+Is role == DESIGNER?
+        │
+        ├── Yes → also load designer profile record
+        │
+        ▼
+Build response
+ (designerProfile section included only for designers)
+        │
+        ▼
+200 OK
+
+
+PUT /api/users/profile (only the fields the client wants to change)
+        │
+        ▼
+Apply basic fields if present (fullName, phone)
+        │
+        ▼
+Is role == DESIGNER?
+        │
+        ├── No  → any designer-specific fields sent are silently ignored
+        │
+        ├── Yes → load designer profile, or create one if it doesn't exist yet
+        │             │
+        │             ▼
+        │        Apply any supplied designer fields
+        │        (bio, yearsExperience, specialization, city)
+        │
+        ▼
+Save changes
+        │
+        ▼
+200 OK + updated profile
+```
+
 ---
 
-## 9. Validation Flow
+## 10. Validation Flow
 
-1. Every request that includes a body (registration, login, profile updates, booking creation, status changes) has that body checked against a fixed set of rules before any feature logic runs at all.
+1. Every request that includes a body (registration, login, profile updates, booking creation, status changes, quotation line items) has that body checked against a fixed set of rules before any feature logic runs at all.
 2. These rules cover things like: is a required field actually present and non-empty; does a value look like a properly formatted email; is a piece of text within its allowed minimum/maximum length; does a number fall within a sensible range; does a password meet its complexity requirement (a minimum length, plus at least one letter and one digit); is a scheduled time actually set in the future rather than the past.
 3. If even one rule fails, the entire request is rejected immediately, before touching the database, with a response listing every single field that failed and a human-readable reason for each one — not just the first problem found, but all of them at once, so a client can fix everything in one pass instead of discovering issues one at a time.
 4. This layer only ever looks at the shape of the data itself — it has no awareness of what else exists in the database. Anything that depends on existing data (is this email already taken, does this designer actually exist, do you actually own this booking) is deliberately handled one layer deeper, inside the business logic, after this basic shape-check has already passed.
 
+**Flow diagram:**
+
+```
+Request body received
+        │
+        ▼
+Run field-level checks
+  • required / non-empty
+  • correct format (e.g. email)
+  • length within allowed range
+  • value within allowed range
+  • pattern match (e.g. password complexity)
+        │
+        ├── One or more checks fail
+        │         │
+        │         ▼
+        │   Collect EVERY failing field (not just the first)
+        │         │
+        │         ▼
+        │   400 Bad Request + full list of field errors
+        │
+        ▼
+All checks pass
+        │
+        ▼
+Continue to business logic
+ (data-dependent rules — uniqueness, ownership, existence —
+  are checked there, not at this stage)
+```
+
 ---
 
-## 10. Error Handling Flow
+## 11. Error Handling Flow
 
 1. No matter where something goes wrong in the system — a missing record, a broken rule, bad input, an unexpected bug — it's all funneled through one single, central point before anything is sent back to the client. Individual features never have to build their own custom error responses.
 2. Every error response, regardless of cause, has exactly the same overall shape: when it happened, a numeric status code, a short label for that status, a human-readable message explaining what went wrong, which endpoint was being called, and — only for validation failures — a detailed list of which specific fields were the problem.
@@ -140,30 +655,118 @@ This is the shape every single feature request follows, regardless of which spec
    - Asking for something that doesn't exist (a user, a design, a booking) results in a "not found" response.
    - Trying to create something that would duplicate existing data (like registering an email that's already taken) results in a "conflict" response.
    - Trying to act on something you don't have permission over (someone else's booking) results in a "forbidden" response.
-   - Trying to move something into an invalid state (an illegal booking status change) also results in a "conflict" response.
+   - Trying to move something into an invalid state (an illegal booking status change, or editing/responding to a quotation that's already past the stage where that's allowed) also results in a "conflict" response.
    - Submitting the wrong login credentials results in an "unauthorized" response.
    - Missing or invalid login on a protected endpoint results in "unauthorized"; being logged in but lacking the right role results in "forbidden."
    - Submitting badly-shaped input results in a "bad request" response with the field-by-field breakdown.
    - Anything else entirely unexpected falls back to a generic "internal error" response — deliberately vague, so no internal system detail is ever accidentally exposed to a client.
 4. Two different parts of the system are capable of producing "unauthorized"/"forbidden" outcomes — the very first gatekeeper check (missing/invalid token, wrong role) and the deeper business-logic checks (you don't own this specific record). Both are deliberately made to produce the exact same response shape, so from the outside, a client can't tell which part of the system caught the problem — it always looks and behaves the same way.
 
+**Flow diagram:**
+
+```
+Something goes wrong, anywhere in the system
+        │
+        ▼
+Caught by one central error handler
+        │
+        ▼
+Match against known situations
+        │
+        ├── Record doesn't exist          → 404 Not Found
+        ├── Duplicate data (e.g. email)   → 409 Conflict
+        ├── Not your resource             → 403 Forbidden
+        ├── Illegal state change          → 409 Conflict
+        ├── Wrong login credentials       → 401 Unauthorized
+        ├── Missing/invalid token         → 401 Unauthorized
+        ├── Logged in, wrong role         → 403 Forbidden
+        ├── Malformed input               → 400 Bad Request + field list
+        ├── Anything unmapped/unexpected  → 500 Internal Error (generic message)
+        │
+        ▼
+Build the one standard error shape
+ (timestamp, status, error label, message, path, fieldErrors)
+        │
+        ▼
+Send to client
+ (looks identical whether caught at the security checkpoint
+  or deep inside business logic)
+```
+
 ---
 
-## 11. Documentation Flow
+## 12. Documentation Flow
 
 1. A live, interactive description of every available endpoint is generated automatically, straight from the real code — there's no separate document to keep updated by hand, so it can never fall out of sync with what the API actually does.
 2. Anyone can open this documentation in a browser and see, for every endpoint: what it expects as input, what it returns, and what error cases look like.
 3. It's also usable directly, without any external tool: a user can log in right there in the documentation page, take the token they receive, plug it into the page's own "authorize" step, and from then on every protected endpoint they try directly from that page automatically includes their login — letting someone explore and test the whole API from nothing but a browser.
 4. The documentation pages themselves are public and viewable without logging in — only actually calling the protected endpoints through them requires a real logged-in token, same as calling them any other way.
 
+**Flow diagram:**
+
+```
+Developer opens the API documentation page
+        │
+        ▼
+Browse the auto-generated list of endpoints
+ (input shape, response shape, error cases — for each one)
+        │
+        ▼
+Log in through the documentation page itself
+        │
+        ▼
+Copy the returned access token
+        │
+        ▼
+Paste it into the page's "Authorize" step
+        │
+        ▼
+Every subsequent "try it out" call
+ automatically includes that token
+        │
+        ▼
+Protected endpoints can be tested directly from the browser
+```
+
 ---
 
-## 12. Environment & Configuration Flow
+## 13. Environment & Configuration Flow
 
 1. Anything sensitive or environment-specific — database connection details, the JWT signing secret, which frontend addresses are allowed to call the API — is never written directly into the codebase. It's always supplied from outside, through environment variables, so the same code can run against different databases and settings in different places without being changed itself.
 2. During local development, these values are supplied automatically from a local configuration file that lives only on the developer's machine and is deliberately excluded from version control — so real secrets are never accidentally shared or committed anywhere.
 3. There's a separate, optional local-development mode that layers a few extra conveniences on top of the normal configuration: a safe placeholder signing key so a new developer can run the app immediately without generating one themselves, and much more detailed logging (including the raw database queries being run) to make local troubleshooting easier. None of this affects how the system behaves outside of local development.
 4. The database itself lives in the cloud rather than requiring anything installed locally — anyone working on this project only needs the connection details, not a locally running database server, to get the whole system working end to end.
+
+**Flow diagram:**
+
+```
+Application needs a configuration value
+        │
+        ▼
+Look for a matching environment variable
+        │
+        ├── Set (via real env var, or a local .env file)
+        │         │
+        │         ▼
+        │   Use that value
+        │
+        ├── Not set
+        │         │
+        │         ▼
+        │   Fall back to a built-in default, if one exists
+        │
+        ▼
+Is the "local" development profile active?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   Layer on dev-only defaults (e.g. placeholder JWT secret)
+        │   and much more detailed / verbose logging
+        │
+        ▼
+Final configuration is ready before startup continues
+```
 
 ---
 

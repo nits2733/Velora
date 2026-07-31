@@ -29,24 +29,31 @@ it works here, with small examples.
 14. [Full Request Lifecycle (Controller → Service → Repository → DB)](#14-full-request-lifecycle-controller--service--repository--db)
 15. [Feature Walkthrough: Design Catalog (Search/Filter/Pagination)](#15-feature-walkthrough-design-catalog-searchfilterpagination)
 16. [Feature Walkthrough: Bookings (State Machine)](#16-feature-walkthrough-bookings-state-machine)
-17. [Feature Walkthrough: User Profile (Role-Conditional Data)](#17-feature-walkthrough-user-profile-role-conditional-data)
-18. [Validation Flow](#18-validation-flow)
-19. [Exception Handling Flow](#19-exception-handling-flow)
-20. [API Documentation (Swagger/OpenAPI)](#20-api-documentation-swaggeropenapi)
-21. [Environment & Secrets Management](#21-environment--secrets-management)
-22. [Quick Reference: All Endpoints](#22-quick-reference-all-endpoints)
+17. [Feature Walkthrough: Quotations (Post-Consultation Estimate)](#17-feature-walkthrough-quotations-post-consultation-estimate)
+18. [Feature Walkthrough: User Profile (Role-Conditional Data)](#18-feature-walkthrough-user-profile-role-conditional-data)
+19. [Validation Flow](#19-validation-flow)
+20. [Exception Handling Flow](#20-exception-handling-flow)
+21. [API Documentation (Swagger/OpenAPI)](#21-api-documentation-swaggeropenapi)
+22. [Environment & Secrets Management](#22-environment--secrets-management)
+23. [Quick Reference: All Endpoints](#23-quick-reference-all-endpoints)
 
 ---
 
 ## 1. Project Purpose & Tech Stack
 
-Velora is the backend API for an interior-design booking app. It has three kinds of
+Velora is the backend API for an interior-design booking app. It has two kinds of
 users interacting with it:
 
-- **Customers** — browse a catalog of interior designs, book consultations with designers.
+- **Customers** — browse a catalog of interior designs, book consultations with designers,
+  and receive/respond to line-item quotations after a consultation.
 - **Designers** — publish designs (conceptually; upload is not yet built), manage the
-  bookings customers make with them.
+  bookings customers make with them, and turn a booking into a scoped quotation (line
+  items + total) once the consultation has happened.
 - Both share one `users` table, distinguished by a `role` column.
+
+A booking's purpose is to get a designer and customer talking; a **quotation** is what
+turns that conversation into a priced, actionable scope of work the customer can accept
+or reject. See [Feature Walkthrough: Quotations](#17-feature-walkthrough-quotations-post-consultation-estimate).
 
 **Tech stack:**
 
@@ -82,35 +89,42 @@ src/main/java/com/velora/backend/
 │   ├── UserController.java          # /api/users/**
 │   ├── DesignController.java        # /api/designs/**
 │   ├── CategoryController.java      # /api/categories/**
-│   └── BookingController.java       # /api/bookings/**
+│   ├── BookingController.java       # /api/bookings/**
+│   └── QuotationController.java     # /api/bookings/{bookingId}/quotation
 ├── service/                          # Business logic (the "brain")
 │   ├── AuthService.java
 │   ├── UserService.java
 │   ├── DesignService.java
 │   ├── CategoryService.java
-│   └── BookingService.java
+│   ├── BookingService.java
+│   └── QuotationService.java
 ├── repository/                       # Data access (talks to the database)
 │   ├── UserRepository.java
 │   ├── DesignerProfileRepository.java
 │   ├── DesignRepository.java
 │   ├── DesignSpecifications.java     # Dynamic query building for search/filter
 │   ├── CategoryRepository.java
-│   └── BookingRepository.java
+│   ├── BookingRepository.java
+│   └── QuotationRepository.java
 ├── entity/                            # JPA entities = database tables as Java classes
 │   ├── User.java, Role.java
 │   ├── DesignerProfile.java
 │   ├── Category.java
 │   ├── Design.java
-│   └── Booking.java, BookingStatus.java
+│   ├── Booking.java, BookingStatus.java
+│   └── Quotation.java, QuotationLineItem.java, QuotationStatus.java
 ├── dto/                               # Data Transfer Objects = what the API sends/receives
 │   ├── auth/   (RegisterRequest, LoginRequest, AuthResponse)
 │   ├── user/   (UserProfileResponse, UpdateProfileRequest, DesignerProfileResponse)
 │   ├── design/ (DesignResponse, DesignSummaryResponse, CategoryResponse)
-│   └── booking/(BookingRequest, BookingResponse, BookingStatusUpdateRequest)
+│   ├── booking/(BookingRequest, BookingResponse, BookingStatusUpdateRequest)
+│   └── quotation/(SaveQuotationRequest, QuotationLineItemRequest,
+│                  QuotationResponse, QuotationLineItemResponse)
 ├── mapper/                            # Converts entities <-> DTOs
 │   ├── UserMapper.java
 │   ├── DesignMapper.java
-│   └── BookingMapper.java
+│   ├── BookingMapper.java
+│   └── QuotationMapper.java
 ├── security/                          # JWT + Spring Security plumbing
 │   ├── JwtService.java               # Create/parse/validate tokens
 │   ├── JwtAuthFilter.java            # Runs on every request, checks the token
@@ -132,7 +146,9 @@ src/main/resources/
 ├── application.yml                   # Main config (reads from env vars)
 ├── application-local.yml             # Overrides for local dev (`local` profile)
 └── db/migration/
-    └── V1__init_schema.sql           # Flyway migration: creates all tables
+    ├── V1__init_schema.sql           # Flyway migration: creates all tables
+    ├── V2__seed_data.sql             # Seed categories, a demo designer, sample designs
+    └── V3__quotations.sql            # Adds quotations + quotation_line_items tables
 ```
 
 **Why this layered structure?**
@@ -276,6 +292,32 @@ categories                 designs   │            bookings
                           │ price_estimate    │    │ notes               │
                           │ style_tag         │    │ created_at          │
                           └──────────────────┘    └───────────────────┘
+                                                              ▲
+                                                              │ 1-to-1 (booking_id UNIQUE)
+                                                              │
+                                                    quotations │
+                                                    ┌─────────┴──────────┐
+                                                    │ id (PK)             │
+                                                    │ booking_id (FK, unique) │
+                                                    │ status              │
+                                                    │ total_amount        │
+                                                    │ notes               │
+                                                    │ created_at          │
+                                                    │ updated_at          │
+                                                    └──────────┬──────────┘
+                                                               │ 1-to-many
+                                                               ▼
+                                                    quotation_line_items
+                                                    ┌──────────────────────┐
+                                                    │ id (PK)               │
+                                                    │ quotation_id (FK)     │
+                                                    │ description           │
+                                                    │ quantity              │
+                                                    │ unit                  │
+                                                    │ unit_price            │
+                                                    │ amount                │
+                                                    │ sort_order            │
+                                                    └──────────────────────┘
 ```
 
 **Relationships:**
@@ -287,12 +329,16 @@ categories                 designs   │            bookings
 | `users` ↔ `designs`            | One-to-many (as designer). A designer can publish many designs. |
 | `users` ↔ `bookings`           | One-to-many, **twice** — once as `customer_id`, once as `designer_id`. |
 | `designs` ↔ `bookings`         | Optional. A booking can reference a specific design, or be a general consultation (`design_id` is nullable). |
+| `bookings` ↔ `quotations`      | One-to-one, at most one quotation per booking (`booking_id UNIQUE`). Added in `V3__quotations.sql` — this is the artifact a designer produces after a consultation: a priced, itemized scope the customer can accept or reject. |
+| `quotations` ↔ `quotation_line_items` | One-to-many. Each line item is one priced row (e.g. "Modular kitchen — ₹50,000"); `total_amount` on the quotation is the sum of all its line items' `amount`. |
 
 **Constraints worth noting:**
 - `role` and `status` columns use SQL `CHECK` constraints (`CHECK (role IN ('CUSTOMER', 'DESIGNER'))`)
-  as a database-level safety net, in addition to Java enum validation.
+  as a database-level safety net, in addition to Java enum validation. `quotations.status`
+  does the same (`CHECK (status IN ('DRAFT', 'SENT', 'ACCEPTED', 'REJECTED'))`).
 - Indexes exist on frequently-filtered columns: `designs.category_id`, `designs.designer_id`,
-  `designs.style_tag`, `bookings.customer_id`, `bookings.designer_id`, `bookings.status`.
+  `designs.style_tag`, `bookings.customer_id`, `bookings.designer_id`, `bookings.status`,
+  `quotation_line_items.quotation_id`.
   These make the catalog search and booking list queries fast as data grows.
 
 ---
@@ -354,6 +400,16 @@ Key annotations explained:
 - `Booking.customer`, `Booking.designer`, `Booking.design` — all `@ManyToOne(LAZY)`.
   Note `Booking` has **two** `@ManyToOne` relationships to the *same* `User` entity
   (customer and designer) — this is why both are explicitly named via `@JoinColumn`.
+- `Quotation.booking` — `@OneToOne`, mirroring `DesignerProfile.user`.
+- `Quotation.lineItems` — `@OneToMany(mappedBy = "quotation", cascade = CascadeType.ALL, orphanRemoval = true)`.
+  This is a new pattern not used elsewhere in the codebase yet: because a quotation's
+  line items have no independent existence (they only make sense as part of one
+  quotation), `cascade = ALL` means saving/deleting the `Quotation` automatically
+  saves/deletes its `QuotationLineItem` rows too, and `orphanRemoval = true` means
+  simply removing an item from the in-memory `lineItems` list (as `QuotationService`
+  does when replacing a draft's items) deletes that row from the database — no manual
+  `quotationLineItemRepository.delete(...)` call needed. This is why there's no separate
+  repository for `QuotationLineItem` at all; it's managed entirely through its parent.
 
 ---
 
@@ -393,14 +449,26 @@ public record RegisterRequest(
 
 ```java
 public record AuthResponse(
-        String accessToken, String tokenType, Long userId,
-        String email, String fullName, Role role
+        String accessToken,
+        String tokenType,
+        UserSummary user
 ) {
+    public record UserSummary(Long id, String email, String fullName, Role role) {}
+
     public static AuthResponse of(String token, Long userId, String email, String fullName, Role role) {
-        return new AuthResponse(token, "Bearer", userId, email, fullName, role);
+        return new AuthResponse(token, "Bearer", new UserSummary(userId, email, fullName, role));
     }
 }
 ```
+
+Notice the user-identifying fields are grouped under a nested `user` object rather than
+sitting flat alongside `accessToken`/`tokenType`. This keeps the response shape
+self-documenting — "token stuff" and "who this token belongs to" are visually and
+structurally separate — and gives room to add more account fields later without
+cluttering the top level. `UserSummary` is declared as a **nested record**, the same
+technique used for `ApiErrorResponse.FieldViolation` (see
+[Exception Handling Flow](#20-exception-handling-flow)) — a small DTO that only ever
+makes sense in the context of its parent.
 
 The `of(...)` static factory method is just a convenience constructor used by
 `AuthService` so callers don't need to remember the literal string `"Bearer"`.
@@ -462,6 +530,19 @@ Passing a `Pageable` (page number + size + sort) makes Spring Data automatically
 generate a `LIMIT ... OFFSET ...` query and also run a `COUNT(*)` query to know the
 total number of matching rows — both wrapped up in the returned `Page<T>` object
 (which has `.getContent()`, `.getTotalElements()`, `.getTotalPages()`, etc.).
+
+**Lookup by a foreign key — `QuotationRepository.java`:**
+
+```java
+public interface QuotationRepository extends JpaRepository<Quotation, Long> {
+    Optional<Quotation> findByBookingId(Long bookingId);
+}
+```
+
+Since a quotation is one-to-one with its booking, every quotation lookup in
+`QuotationService` goes through the booking id rather than the quotation's own id — the
+booking id is the natural key a controller/client actually has on hand (see
+[Feature Walkthrough: Quotations](#17-feature-walkthrough-quotations-post-consultation-estimate)).
 
 **Dynamic queries — `DesignSpecifications.java` + `JpaSpecificationExecutor`:**
 
@@ -554,10 +635,10 @@ token, since the token itself carries the identity + signature).
 
 1. **Controller** (`AuthController.register`) receives the JSON body, and Spring
    automatically deserializes it into a `RegisterRequest` record.
-   `@Valid` triggers Bean Validation on the fields (see [Validation](#18-validation-flow))
+   `@Valid` triggers Bean Validation on the fields (see [Validation](#19-validation-flow))
    *before* the method body even runs. If validation fails, the method is never called
    — Spring throws `MethodArgumentNotValidException` instead (caught globally, see
-   [Exception Handling](#19-exception-handling-flow)).
+   [Exception Handling](#20-exception-handling-flow)).
 
 2. **Controller delegates to `AuthService.register(request)`.** Controllers should
    never contain business logic — their only job is: deserialize input, call the
@@ -598,7 +679,7 @@ token, since the token itself carries the identity + signature).
    ```
    Customers never get a `DesignerProfile` row — this is why the `designerProfile`
    field in profile responses is `null`/absent for customers (see
-   [User Profile Walkthrough](#17-feature-walkthrough-user-profile-role-conditional-data)).
+   [User Profile Walkthrough](#18-feature-walkthrough-user-profile-role-conditional-data)).
 
 7. **Generate a JWT immediately** so the new user is logged in right after
    registering (no separate login step required):
@@ -1059,7 +1140,123 @@ Conflict` by the global handler.
 
 ---
 
-## 17. Feature Walkthrough: User Profile (Role-Conditional Data)
+## 17. Feature Walkthrough: Quotations (Post-Consultation Estimate)
+
+**Purpose:** A `Booking` only gets a designer and customer talking — it carries no
+price. A **quotation** is the artifact that turns that consultation into a concrete,
+itemized scope of work with a total cost, which the customer then explicitly accepts
+or rejects. This was added specifically because nothing in the original booking flow
+captured "what was actually agreed" — without it, a confirmed booking had no record of
+what it would cost or what it covered.
+
+**Data shape:** one `Quotation` per `Booking` (`booking_id UNIQUE` — no revision
+history in this version), holding a list of `QuotationLineItem`s (`description`,
+optional `quantity`/`unit`/`unitPrice` for a fully itemized row, and a required
+`amount`). `totalAmount` on the quotation is always the sum of its line items'
+`amount`s, recomputed server-side every time the line items change — never trusted
+from client input.
+
+**State machine:** `DRAFT → SENT → ACCEPTED` or `DRAFT → SENT → REJECTED`. Unlike
+`BookingStatus`, there's no branch back to an editable state — once `SENT`, the
+designer can no longer edit it, and once `ACCEPTED`/`REJECTED`, it's terminal (same
+"no way out of a terminal state" philosophy as `BookingStatus.CANCELLED`/`COMPLETED`).
+
+```
+        ┌───────┐  designer sends   ┌──────┐  customer accepts  ┌──────────┐
+        │ DRAFT │──────────────────►│ SENT │───────────────────►│ ACCEPTED │
+        └───────┘                   └──┬───┘                    └──────────┘
+     (designer can keep                 │  customer rejects
+      editing line items                ▼
+      while still DRAFT)           ┌──────────┐
+                                    │ REJECTED │
+                                    └──────────┘
+```
+
+**Endpoints** — all nested under the booking they belong to
+(`/api/bookings/{bookingId}/quotation`), following the same nested-resource pattern
+`BookingController` uses for `/{id}/cancel` and `/{id}/status`:
+
+| Action | Endpoint | Role required | Extra ownership check |
+|---|---|---|---|
+| Save/replace draft | `PUT /api/bookings/{bookingId}/quotation` | DESIGNER | must be *the* designer assigned to that booking; quotation must currently be `DRAFT` (or not exist yet) |
+| Send to customer | `POST /api/bookings/{bookingId}/quotation/send` | DESIGNER | same designer check; quotation must be `DRAFT` and have at least one line item |
+| Get quotation | `GET /api/bookings/{bookingId}/quotation` | any authenticated | must be the customer *or* the designer on that booking |
+| Accept | `PATCH /api/bookings/{bookingId}/quotation/accept` | CUSTOMER | must be *the* customer on that booking; quotation must be `SENT` |
+| Reject | `PATCH /api/bookings/{bookingId}/quotation/reject` | CUSTOMER | must be *the* customer on that booking; quotation must be `SENT` |
+
+**Saving a draft — `QuotationService.saveDraft`:**
+
+```java
+Quotation quotation = quotationRepository.findByBookingId(bookingId)
+        .orElseGet(() -> Quotation.builder()
+                .booking(booking).status(QuotationStatus.DRAFT).totalAmount(BigDecimal.ZERO).build());
+
+if (quotation.getId() != null && quotation.getStatus() != QuotationStatus.DRAFT) {
+    throw new InvalidStateTransitionException(
+            "Cannot edit a quotation once it has been sent, accepted, or rejected");
+}
+
+quotation.setNotes(request.notes());
+replaceLineItems(quotation, request.lineItems());   // clears + rebuilds the list, recomputes totalAmount
+```
+
+Two things worth noticing:
+1. `PUT` here means **create-or-replace-the-whole-draft**, not a partial update like
+   `UserService.updateProfile`. Every call sends the *complete* line-item list; the
+   service clears the existing list and rebuilds it (`quotation.getLineItems().clear()`
+   then re-adds), relying on `orphanRemoval = true` (see [Entities](#6-entities-jpa-layer))
+   to actually delete the old rows. This is simpler to reason about than diffing
+   old-vs-new line items, at the cost of the client always resending the full list.
+2. The `if (quotation.getId() != null && status != DRAFT)` check is what makes a
+   sent/accepted/rejected quotation immutable — same defensive pattern as
+   `BookingService.validateTransition` refusing to move a booking out of a terminal state.
+
+**Sending — `QuotationService.send`:**
+
+```java
+if (quotation.getStatus() != QuotationStatus.DRAFT) {
+    throw new InvalidStateTransitionException("Only a draft quotation can be sent");
+}
+if (quotation.getLineItems().isEmpty()) {
+    throw new IllegalArgumentException("Cannot send a quotation with no line items");
+}
+quotation.setStatus(QuotationStatus.SENT);
+```
+
+The empty-line-items check is a good example of a rule that can't live in Bean
+Validation on the DTO (see [Validation Flow](#19-validation-flow)) — `SaveQuotationRequest`
+deliberately allows an empty `lineItems` list so a designer can save an in-progress
+draft with nothing in it yet, but *sending* an empty quotation to a customer would be
+meaningless, so that check only fires here, at the point where it actually matters.
+
+**Accepting/rejecting — `QuotationService.respond` (shared by both):**
+
+```java
+if (!quotation.getBooking().getCustomer().getId().equals(customerId)) {
+    throw new UnauthorizedActionException("Only the customer on this booking can respond to its quotation");
+}
+if (quotation.getStatus() != QuotationStatus.SENT) {
+    throw new InvalidStateTransitionException("Only a sent quotation can be accepted or rejected");
+}
+quotation.setStatus(newStatus);   // ACCEPTED or REJECTED
+```
+
+Both `accept` and `reject` funnel through this one private method with just the target
+status swapped — since the ownership check and the "must currently be SENT" check are
+identical for both actions, duplicating them across two methods would just be two
+copies of the same bug waiting to diverge.
+
+**No new exception types, no new `GlobalExceptionHandler` entries.** The whole feature
+reuses `ResourceNotFoundException` (404 — booking or quotation doesn't exist),
+`UnauthorizedActionException` (403 — wrong participant), `InvalidStateTransitionException`
+(409 — illegal status move), and plain `IllegalArgumentException` (400 — empty line
+items on send), exactly the same set `BookingService` already relies on (see
+[Exception Handling Flow](#20-exception-handling-flow)). New features in this codebase
+default to reusing the existing exception vocabulary rather than inventing new ones.
+
+---
+
+## 18. Feature Walkthrough: User Profile (Role-Conditional Data)
 
 **Purpose:** Every user (customer or designer) can view/update their own profile via
 one shared endpoint pair — `GET /api/users/profile` and `PUT /api/users/profile` —
@@ -1127,7 +1324,7 @@ simply never read, because the whole designer-fields block is skipped for their 
 
 ---
 
-## 18. Validation Flow
+## 19. Validation Flow
 
 **What:** Jakarta Bean Validation (the `@NotBlank`, `@Email`, `@Size`, `@Pattern`,
 `@Min`, `@Max`, `@Future`, `@NotNull` annotations you see on DTO fields) is a
@@ -1176,7 +1373,7 @@ for how those become HTTP responses too.
 
 ---
 
-## 19. Exception Handling Flow
+## 20. Exception Handling Flow
 
 **What:** `GlobalExceptionHandler`, annotated `@RestControllerAdvice`, is a single
 class that intercepts exceptions thrown **anywhere** in any controller/service call
@@ -1262,7 +1459,7 @@ no visible difference in error format regardless of which layer caught the probl
 
 ---
 
-## 20. API Documentation (Swagger/OpenAPI)
+## 21. API Documentation (Swagger/OpenAPI)
 
 **What:** `springdoc-openapi-starter-webmvc-ui` automatically scans all
 `@RestController` classes/methods and generates a live, interactive API
@@ -1303,7 +1500,7 @@ Both `/swagger-ui/**` and `/v3/api-docs/**` are listed in `SecurityConfig`'s
 
 ---
 
-## 21. Environment & Secrets Management
+## 22. Environment & Secrets Management
 
 **Why environment variables instead of hardcoded config:** Database credentials, JWT
 signing secrets, and CORS origins differ between local development, staging, and
@@ -1349,7 +1546,7 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 
 ---
 
-## 22. Quick Reference: All Endpoints
+## 23. Quick Reference: All Endpoints
 
 | Method | Path | Auth required | Role restriction | Purpose |
 |---|---|---|---|---|
@@ -1365,6 +1562,11 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | GET | `/api/bookings/{id}` | Yes | — | Get one booking's details (must be a participant) |
 | PATCH | `/api/bookings/{id}/cancel` | Yes | CUSTOMER | Cancel your own booking (only if PENDING/CONFIRMED) |
 | PATCH | `/api/bookings/{id}/status` | Yes | DESIGNER | Advance a booking's status (only if you're the assigned designer) |
+| PUT | `/api/bookings/{bookingId}/quotation` | Yes | DESIGNER | Create or replace a draft quotation for a booking (assigned designer only) |
+| POST | `/api/bookings/{bookingId}/quotation/send` | Yes | DESIGNER | Send a draft quotation to the customer |
+| GET | `/api/bookings/{bookingId}/quotation` | Yes | — | Get the quotation for a booking (must be a participant) |
+| PATCH | `/api/bookings/{bookingId}/quotation/accept` | Yes | CUSTOMER | Accept a sent quotation |
+| PATCH | `/api/bookings/{bookingId}/quotation/reject` | Yes | CUSTOMER | Reject a sent quotation |
 | GET | `/actuator/health` | No | — | Health check (used to confirm the app is up) |
 | GET | `/swagger-ui/index.html` | No | — | Interactive API documentation |
 | GET | `/v3/api-docs` | No | — | Raw OpenAPI JSON spec |
