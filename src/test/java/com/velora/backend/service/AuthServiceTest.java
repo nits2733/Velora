@@ -70,8 +70,8 @@ class AuthServiceTest {
 
         AuthResponse response = authService.register(request);
 
-        assertThat(response.userId()).isEqualTo(42L);
-        assertThat(response.role()).isEqualTo(Role.CUSTOMER);
+        assertThat(response.user().id()).isEqualTo(42L);
+        assertThat(response.user().role()).isEqualTo(Role.CUSTOMER);
         assertThat(response.accessToken()).isNotBlank();
         org.mockito.Mockito.verifyNoInteractions(designerProfileRepository);
     }
