@@ -1,0 +1,971 @@
+<title>Velora — Product &amp; Architecture Whitepaper</title>
+<style>
+:root {
+  --ink: #1c2430;
+  --sub: #5b6472;
+  --bg: #faf8f4;
+  --paper: #ffffff;
+  --line: #e4ddd0;
+  --accent: #b8622f;
+  --accent-soft: #f3e2d3;
+  --mvp: #2f7a4d;
+  --mvp-soft: #e1f0e6;
+  --roadmap: #4a6a8a;
+  --roadmap-soft: #e6edf3;
+  --mono-bg: #f1ede4;
+  --font-display: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', serif;
+  --font-body: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Consolas', 'Cascadia Code', monospace;
+}
+:root[data-theme="dark"] {
+  --ink: #e9e5da;
+  --sub: #a3a297;
+  --bg: #161513;
+  --paper: #1e1c19;
+  --line: #34302a;
+  --accent: #e08c52;
+  --accent-soft: #3a2a1e;
+  --mvp: #6fbf8b;
+  --mvp-soft: #1f3327;
+  --roadmap: #8caed0;
+  --roadmap-soft: #202e3a;
+  --mono-bg: #26221d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e9e5da;
+    --sub: #a3a297;
+    --bg: #161513;
+    --paper: #1e1c19;
+    --line: #34302a;
+    --accent: #e08c52;
+    --accent-soft: #3a2a1e;
+    --mvp: #6fbf8b;
+    --mvp-soft: #1f3327;
+    --roadmap: #8caed0;
+    --roadmap-soft: #202e3a;
+    --mono-bg: #26221d;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  line-height: 1.65;
+}
+h1, h2, h3, h4 { font-family: var(--font-display); text-wrap: balance; }
+code, .mono { font-family: var(--font-mono); }
+
+.doc {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+
+/* ---------- print setup ---------- */
+@media print {
+  body { background: #fff; font-size: 12.5px; }
+  .doc { max-width: none; padding: 0; }
+  .no-print { display: none !important; }
+  .page { page-break-after: always; padding: 0 !important; }
+  .page:last-child { page-break-after: auto; }
+  .panel, .role-card, .decision-row, .feature-card { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+@page { size: A4; margin: 20mm 16mm; }
+
+/* ---------- cover ---------- */
+.cover {
+  min-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4rem 0 3rem;
+}
+.cover .brandmark {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.cover .titleblock { margin-top: auto; margin-bottom: auto; }
+.cover h1 {
+  font-size: clamp(2.6rem, 7vw, 4.2rem);
+  margin: 1.2rem 0 0.6rem;
+  font-weight: 500;
+  line-height: 1.05;
+}
+.cover .subtitle {
+  font-size: 1.25rem;
+  color: var(--sub);
+  max-width: 40ch;
+  font-family: var(--font-display);
+  font-style: italic;
+}
+.cover .meta-row {
+  display: flex;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-top: 1.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+.cover .meta-row strong { color: var(--ink); display: block; font-size: 0.9rem; margin-bottom: 0.15rem; font-family: var(--font-body); font-weight: 600; }
+
+/* ---------- toc ---------- */
+.toc-list { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+.toc-list li {
+  counter-increment: toc;
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px dotted var(--line);
+  font-size: 0.98rem;
+}
+.toc-list li::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.toc-list a { color: var(--ink); text-decoration: none; flex: 1; }
+.toc-list .tp { color: var(--sub); font-family: var(--font-mono); font-size: 0.8rem; }
+
+/* ---------- section chrome ---------- */
+section.doc-section { padding-top: 2.2rem; }
+.sec-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.4rem;
+}
+.sec-title { font-size: 1.9rem; margin: 0 0 1.1rem; font-weight: 500; }
+.sec-title .n { color: var(--accent); font-family: var(--font-mono); font-size: 1.1rem; margin-right: 0.5rem; }
+.lede { color: var(--sub); max-width: 68ch; font-size: 1rem; margin-bottom: 1.3rem; }
+
+/* ---------- generic panel ---------- */
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1.3rem 1.4rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+.panel h4 { margin: 0 0 0.6rem; font-size: 1rem; font-family: var(--font-body); font-weight: 700; }
+
+/* ---------- callouts ---------- */
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 1rem 1.2rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1.1rem 0;
+  font-size: 0.94rem;
+}
+.callout .label { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 0.35rem; }
+.callout.mvp { border-left-color: var(--mvp); background: var(--mvp-soft); }
+.callout.mvp .label { color: var(--mvp); }
+.callout.roadmap { border-left-color: var(--roadmap); background: var(--roadmap-soft); }
+.callout.roadmap .label { color: var(--roadmap); }
+
+/* ---------- pills ---------- */
+.pill { display: inline-block; font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.05em; padding: 0.15rem 0.55rem; border-radius: 999px; font-weight: 700; text-transform: uppercase; }
+.pill.mvp { background: var(--mvp-soft); color: var(--mvp); }
+.pill.roadmap { background: var(--roadmap-soft); color: var(--roadmap); }
+.pill.home { background: var(--accent-soft); color: var(--accent); }
+.pill.indiv { background: var(--roadmap-soft); color: var(--roadmap); }
+.legend { display: flex; gap: 1rem; align-items: center; font-size: 0.82rem; color: var(--sub); margin: 0.6rem 0 1rem; flex-wrap: wrap; }
+.legend span { display: flex; align-items: center; gap: 0.4rem; }
+
+/* ---------- tables ---------- */
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 0.8rem 0; }
+th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--sub); font-weight: 700; background: var(--mono-bg); }
+tr:last-child td { border-bottom: none; }
+td code { background: var(--mono-bg); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.82em; }
+
+/* ---------- role / feature cards ---------- */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; margin: 1rem 0; }
+.role-card, .feature-card, .pillar-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.1rem 1.2rem;
+}
+.role-card h4, .feature-card h4, .pillar-card h4 { margin: 0 0 0.5rem; font-size: 1.02rem; }
+.role-card ul, .feature-card ul { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.88rem; }
+.role-card ul li, .feature-card ul li { margin-bottom: 0.3rem; }
+.pillar-card p { font-size: 0.9rem; color: var(--sub); margin: 0; }
+
+/* ---------- decision table ---------- */
+.decision-row {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin-bottom: 0.8rem;
+}
+.decision-row .q { font-weight: 700; font-size: 0.98rem; margin-bottom: 0.5rem; display: flex; gap: 0.5rem; align-items: baseline; }
+.decision-row .q::before { content: "Q"; font-family: var(--font-mono); color: var(--accent); font-size: 0.8rem; border: 1px solid var(--accent); border-radius: 50%; width: 1.3rem; height: 1.3rem; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.decision-row .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.87rem; }
+.decision-row .grid2 .h { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sub); margin-bottom: 0.25rem; }
+.decision-row .rejected { color: var(--sub); }
+.decision-row .chosen { color: var(--ink); }
+
+/* ---------- timeline ---------- */
+.timeline { position: relative; padding-left: 1.8rem; border-left: 2px solid var(--line); margin: 1.2rem 0; }
+.tl-item { position: relative; padding-bottom: 1.6rem; }
+.tl-item:last-child { padding-bottom: 0; }
+.tl-item::before { content: ""; position: absolute; left: -2.06rem; top: 0.3rem; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+.tl-item.roadmap::before { background: var(--roadmap); }
+.tl-item .phase { font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.tl-item.roadmap .phase { color: var(--roadmap); }
+.tl-item h4 { margin: 0.2rem 0 0.35rem; font-size: 1.05rem; }
+.tl-item .tags { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.tag { font-family: var(--font-mono); font-size: 0.68rem; background: var(--mono-bg); color: var(--sub); padding: 0.15rem 0.5rem; border-radius: 999px; }
+
+/* ---------- mermaid host ---------- */
+.diagram-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 1rem; margin: 1rem 0; overflow-x: auto; }
+.diagram-caption { font-size: 0.8rem; color: var(--sub); text-align: center; margin-top: 0.4rem; font-style: italic; }
+
+/* ---------- footer per section (screen only) ---------- */
+.sec-divider { border: none; border-top: 1px solid var(--line); margin: 2.4rem 0 0; }
+
+.stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin: 1.2rem 0; }
+.stat-box { text-align: center; padding: 1rem 0.6rem; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+.stat-box .num { font-family: var(--font-mono); font-size: 1.6rem; color: var(--accent); font-weight: 700; }
+.stat-box .lbl { font-size: 0.78rem; color: var(--sub); margin-top: 0.2rem; }
+
+.print-tip {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--accent); color: #fff;
+  font-family: var(--font-mono); font-size: 0.82rem;
+  padding: 0.6rem 1rem; text-align: center;
+}
+.print-tip button { background: #fff; color: var(--accent); border: none; border-radius: 5px; padding: 0.25rem 0.7rem; font-family: var(--font-mono); font-size: 0.78rem; font-weight: 700; cursor: pointer; margin-left: 0.6rem; }
+</style>
+
+<div class="print-tip no-print">
+  This page is print-formatted &mdash; use your browser's Print dialog and choose "Save as PDF" for the final document.
+  <button onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<div class="doc">
+
+<!-- ============ COVER ============ -->
+<div class="page cover">
+  <div class="brandmark">Velora &middot; Product &amp; Architecture Whitepaper</div>
+  <div class="titleblock">
+    <h1>One platform for<br>every home service.</h1>
+    <p class="subtitle">How Velora connects customers with trusted professionals&mdash;from a full
+    interior-design transformation to a single plumbing fix&mdash;through one account, one
+    booking flow, one trusted marketplace.</p>
+  </div>
+  <div class="meta-row">
+    <div><strong>Document</strong>MVP Technical &amp; Business Overview</div>
+    <div><strong>Version</strong>1.0 &mdash; August 2026</div>
+    <div><strong>Audience</strong>Technical &amp; Business Stakeholders</div>
+    <div><strong>Status</strong>MVP shipped, roadmap outlined</div>
+  </div>
+</div>
+
+<!-- ============ TOC ============ -->
+<div class="page">
+  <h2 class="sec-title" style="margin-top:2rem;">Contents</h2>
+  <ol class="toc-list">
+    <li><a href="#s1">Executive Summary</a><span class="tp">Vision, mission, users</span></li>
+    <li><a href="#s2">Problem Statement</a><span class="tp">Why home services are broken</span></li>
+    <li><a href="#s3">Product Vision</a><span class="tp">One platform, two journeys</span></li>
+    <li><a href="#s4">User Roles</a><span class="tp">Customer, Professional, Admin</span></li>
+    <li><a href="#s5">Customer Journey</a><span class="tp">End-to-end, both paths</span></li>
+    <li><a href="#s6">Full Home Project Flow</a><span class="tp">Design-led transformation</span></li>
+    <li><a href="#s7">Individual Services Flow</a><span class="tp">Single-trade requests</span></li>
+    <li><a href="#s8">Core Features</a><span class="tp">Module-by-module</span></li>
+    <li><a href="#s9">Architecture</a><span class="tp">Layers, auth, patterns</span></li>
+    <li><a href="#s10">Domain Model</a><span class="tp">Entities &amp; relationships</span></li>
+    <li><a href="#s11">Design Decisions</a><span class="tp">Why, not just what</span></li>
+    <li><a href="#s12">API Overview</a><span class="tp">Module responsibilities</span></li>
+    <li><a href="#s13">Security</a><span class="tp">JWT, roles, validation</span></li>
+    <li><a href="#s14">Future Roadmap</a><span class="tp">What comes next</span></li>
+    <li><a href="#s15">Conclusion</a><span class="tp">Why this scales</span></li>
+  </ol>
+  <div class="legend" style="margin-top:1.5rem;">
+    <span><span class="pill mvp">MVP</span> shipped &amp; live today</span>
+    <span><span class="pill roadmap">Roadmap</span> planned, not yet built</span>
+  </div>
+</div>
+
+<!-- ============ 1. EXECUTIVE SUMMARY ============ -->
+<section class="doc-section page" id="s1">
+  <div class="sec-eyebrow">Section 01</div>
+  <h2 class="sec-title"><span class="n">01</span>Executive Summary</h2>
+  <p class="lede">Velora is a home-services marketplace that replaces a fragmented list of
+  contacts&mdash;an interior designer here, a plumber's cousin there&mdash;with one
+  trusted platform covering every trade a home needs.</p>
+
+  <div class="card-grid">
+    <div class="pillar-card">
+      <h4>Vision</h4>
+      <p>A world where getting home work done&mdash;big or small&mdash;is as simple,
+      transparent, and trustworthy as ordering anything else online.</p>
+    </div>
+    <div class="pillar-card">
+      <h4>Mission</h4>
+      <p>Connect customers with verified professionals across every home-service
+      trade, and give both sides a single, transparent booking-to-completion
+      workflow.</p>
+    </div>
+    <div class="pillar-card">
+      <h4>Target Users</h4>
+      <p>Homeowners planning anything from a full room redesign to a same-week
+      repair; independent professionals&mdash;designers, painters, plumbers,
+      electricians, carpenters&mdash;seeking steady, trustworthy demand.</p>
+    </div>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat-box"><div class="num">2</div><div class="lbl">Customer journeys</div></div>
+    <div class="stat-box"><div class="num">3</div><div class="lbl">User roles</div></div>
+    <div class="stat-box"><div class="num">6+</div><div class="lbl">Trade categories</div></div>
+    <div class="stat-box"><div class="num">1</div><div class="lbl">Unified account model</div></div>
+  </div>
+
+  <div class="callout">
+    <div class="label">In one sentence</div>
+    Velora is the layer that sits between "I need something done in my home" and
+    "it's done, and I trust who did it" &mdash; for any trade, at any scale.
+  </div>
+</section>
+
+<!-- ============ 2. PROBLEM STATEMENT ============ -->
+<section class="doc-section page" id="s2">
+  <div class="sec-eyebrow">Section 02</div>
+  <h2 class="sec-title"><span class="n">02</span>Problem Statement</h2>
+  <p class="lede">Today, getting home work done means juggling disconnected people,
+  channels, and promises &mdash; with no single place to track any of it.</p>
+
+  <table>
+    <thead><tr><th>Today's Problem</th><th>What it looks like</th><th>How Velora solves it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Multiple, disconnected vendors</strong></td>
+        <td>A different contact for design, painting, plumbing, electrical&mdash;each found separately, each trusted on faith.</td>
+        <td>One platform, one account type (<code>PROFESSIONAL</code>) spanning every trade &mdash; find and book any of them the same way.</td>
+      </tr>
+      <tr>
+        <td><strong>Lack of transparency</strong></td>
+        <td>Verbal quotes, no itemized breakdown, price surprises mid-project.</td>
+        <td>Structured, itemized <strong>Quotations</strong> the customer explicitly accepts or rejects before work starts.</td>
+      </tr>
+      <tr>
+        <td><strong>Difficult project tracking</strong></td>
+        <td>Status lives in someone's memory or a WhatsApp thread.</td>
+        <td>Every booking has an explicit, queryable state (<code>PENDING &rarr; CONFIRMED &rarr; COMPLETED</code>).</td>
+      </tr>
+      <tr>
+        <td><strong>Poor communication</strong></td>
+        <td>Calls and texts scattered across channels, nothing recorded.</td>
+        <td>Structured requests replace ambiguity &mdash; category, style, budget, and location are captured up front.</td>
+      </tr>
+      <tr>
+        <td><strong>No single platform for both scales</strong></td>
+        <td>A full renovation and a leaky tap need entirely different vendor-finding processes today.</td>
+        <td>Both are first-class request types on the same platform &mdash; see <a href="#s3">Section 3</a>.</td>
+      </tr>
+      <tr>
+        <td><strong>Trust issues</strong></td>
+        <td>No visible track record before hiring someone into your home.</td>
+        <td>Public professional profiles, portfolios of real past work, and a rating built from completed-booking reviews.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 3. PRODUCT VISION ============ -->
+<section class="doc-section page" id="s3">
+  <div class="sec-eyebrow">Section 03</div>
+  <h2 class="sec-title"><span class="n">03</span>Product Vision</h2>
+  <p class="lede">Velora is a <strong>one-stop home services platform</strong>. Every request
+  a customer makes falls into one of two journeys &mdash; both converge on the same
+  underlying account, portfolio, and booking model.</p>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+flowchart TD
+    H[Customer need] --> D{Scale of the job?}
+    D -->|"End-to-end room /\nhome transformation"| A[Complete Home Transformation]
+    D -->|"Single, standalone\ntrade job"| B[Individual Home Service]
+    A --> C1[Shared: Professional accounts]
+    B --> C1
+    C1 --> C2[Shared: Booking lifecycle]
+    C2 --> C3[Shared: Quotation &amp; Review]
+    C3 --> E[Completed, reviewed work]
+</pre>
+    <div class="diagram-caption">Both journeys are different front doors into one shared backend model.</div>
+  </div>
+
+  <table>
+    <thead><tr><th></th><th>Complete Home Transformation</th><th>Individual Home Service</th></tr></thead>
+    <tbody>
+      <tr><td>Example</td><td>Full living-room redesign with a chosen interior designer</td><td>Fix a leaking pipe, repaint a wall, rewire a switch</td></tr>
+      <tr><td>Professional pick</td><td>Customer can browse &amp; choose directly, or ask Velora to assign</td><td>Always Velora-assigned &mdash; matched by trade &amp; location</td></tr>
+      <tr><td>Portfolio relevance</td><td>High &mdash; style and past work drive the decision</td><td>Lower &mdash; trade skill and availability matter more than style</td></tr>
+      <tr><td>Request type</td><td><code>FULL_HOME_PROJECT</code></td><td><code>INDIVIDUAL_SERVICE</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="label">Why both exist</div>
+    Splitting these into two entities would have meant two account types, two portfolio
+    models, two booking pipelines &mdash; double the code, double the ways for the two
+    to drift apart. Instead, one <code>RequestType</code> on <code>Booking</code> and one
+    <code>ServiceGroup</code> on <code>Category</code> route the same underlying model down
+    two different rule sets. A professional never has to pick which "kind" of platform
+    they're on &mdash; a carpenter and an interior designer are both simply
+    <code>PROFESSIONAL</code>s.
+  </div>
+</section>
+
+<!-- ============ 4. USER ROLES ============ -->
+<section class="doc-section page" id="s4">
+  <div class="sec-eyebrow">Section 04</div>
+  <h2 class="sec-title"><span class="n">04</span>User Roles</h2>
+  <p class="lede">Three roles, one account table &mdash; a user is exactly one of these,
+  enforced at both the database and API layer.</p>
+
+  <div class="card-grid">
+    <div class="role-card">
+      <h4>&#128100; Customer</h4>
+      <ul>
+        <li>Browse professionals &amp; portfolios</li>
+        <li>Book a Full Home Project (direct pick or Velora-assigned) or an Individual Service</li>
+        <li>Review a sent quotation &mdash; accept or reject</li>
+        <li>Cancel a booking before completion</li>
+        <li>Leave a rating &amp; review after completion</li>
+      </ul>
+    </div>
+    <div class="role-card">
+      <h4>&#128119; Professional</h4>
+      <ul>
+        <li>Maintain a public profile (bio, specialization, city, availability)</li>
+        <li>Upload portfolio items showcasing past work</li>
+        <li>Manage assigned bookings through their lifecycle</li>
+        <li>Draft, send an itemized quotation</li>
+        <li>Update booking status (confirm, complete)</li>
+      </ul>
+    </div>
+    <div class="role-card">
+      <h4>&#128737;&#65039; Admin</h4>
+      <ul>
+        <li>View ranked, scored professional candidates for unassigned bookings</li>
+        <li>Assign a professional to a booking</li>
+        <li>Oversees the trust &amp; matching layer of the platform</li>
+        <li>Not self-registrable &mdash; seeded/provisioned only</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. CUSTOMER JOURNEY ============ -->
+<section class="doc-section page" id="s5">
+  <div class="sec-eyebrow">Section 05</div>
+  <h2 class="sec-title"><span class="n">05</span>Customer Journey</h2>
+  <p class="lede">Every visit starts the same way, then forks based on the scale of what the
+  customer needs done.</p>
+
+  <div class="legend">
+    <span><span class="pill mvp">MVP</span> live today</span>
+    <span><span class="pill roadmap">Roadmap</span> planned</span>
+  </div>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+flowchart TD
+    Home["Homepage /\nBrowse professionals &amp; portfolio"] --> Choice{"What do you need?"}
+    Choice -->|Complete transformation| Full["Full Home Project workflow\n(Section 6)"]
+    Choice -->|One trade job| Indiv["Individual Service workflow\n(Section 7)"]
+    Full --> Conv["Consultation"]
+    Indiv --> Conv2["Requirement capture"]
+    Conv --> Quote["Quotation issued"]
+    Conv2 --> Quote
+    Quote --> Accept{"Customer accepts?"}
+    Accept -->|Yes| Work["Work performed"]
+    Accept -->|No| End1["Booking stays open /\ncustomer can cancel"]
+    Work --> Done["Completed"]
+    Done --> Review["Review &amp; rating"]
+</pre>
+    <div class="diagram-caption">Both forks reconverge on the same quotation &rarr; work &rarr; review spine.</div>
+  </div>
+</section>
+
+<!-- ============ 6. FULL HOME PROJECT FLOW ============ -->
+<section class="doc-section page" id="s6">
+  <div class="sec-eyebrow">Section 06</div>
+  <h2 class="sec-title"><span class="n">06</span>Full Home Project Flow</h2>
+  <p class="lede">A designer-led, end-to-end transformation &mdash; from browsing inspiration
+  to a finished, reviewed room.</p>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+flowchart TD
+    P["Browse portfolio &amp; professional profiles"] --> Pick{"Pick a professional,\nor let Velora assign?"}
+    Pick -->|Direct pick| Book1["Booking created,\nstatus: PENDING"]
+    Pick -->|Velora assigns| Rank["Admin reviews ranked\ncandidates"]
+    Rank --> Assign["Professional assigned,\nstatus: PENDING"]
+    Book1 --> Consult["Consultation"]
+    Assign --> Consult
+    Consult --> Quote["Itemized quotation\ndrafted &amp; sent"]
+    Quote --> Decision{"Customer decision"}
+    Decision -->|Accept| Confirm["Booking: CONFIRMED"]
+    Decision -->|Reject| Cancel["Booking: CANCELLED"]
+    Confirm --> Proj["Project execution"]
+    Proj --> Mile["Milestones"]
+    Mile --> Pay["Payments"]
+    Pay --> Complete["Booking: COMPLETED"]
+    Complete --> Rev["Review &amp; rating"]
+
+    classDef mvp fill:#e1f0e6,stroke:#2f7a4d,color:#1c2430
+    classDef roadmap fill:#e6edf3,stroke:#4a6a8a,color:#1c2430,stroke-dasharray: 4 3
+    class P,Pick,Book1,Rank,Assign,Consult,Quote,Decision,Confirm,Cancel,Complete,Rev mvp
+    class Proj,Mile,Pay roadmap
+</pre>
+    <div class="diagram-caption">Green = live in the MVP today. Blue/dashed = designed for, not yet built.</div>
+  </div>
+
+  <table>
+    <thead><tr><th>Step</th><th>What happens</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Browse portfolio</td><td>Search/filter the public catalog of professional work samples by category, style, or free text.</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Choose designer <em>or</em> Velora assigns</td><td>Direct pick from a public profile, or leave <code>professionalId</code> blank and let the admin-reviewed matching score rank candidates.</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Consultation</td><td>Represented as the booking's scheduled time &amp; notes &mdash; the actual meeting happens off-platform today.</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Quotation</td><td>Professional drafts an itemized estimate; customer explicitly accepts or rejects it.</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Project execution</td><td>Multi-stage scheduling and progress tracking beyond a single status flag.</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Milestones</td><td>Breaking a project into payable, trackable phases.</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Payments</td><td>In-platform payment collection (e.g. Razorpay integration).</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Completion &amp; review</td><td>Booking marked <code>COMPLETED</code>; customer leaves a 1&ndash;5 rating + comment, which recomputes the professional's aggregate rating.</td><td><span class="pill mvp">MVP</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 7. INDIVIDUAL SERVICES FLOW ============ -->
+<section class="doc-section page" id="s7">
+  <div class="sec-eyebrow">Section 07</div>
+  <h2 class="sec-title"><span class="n">07</span>Individual Services Flow</h2>
+  <p class="lede">A single trade job &mdash; painting, plumbing, electrical, carpentry, false
+  ceiling, modular kitchen &mdash; always matched and assigned by Velora, never
+  self-picked.</p>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+flowchart TD
+    Sel["Choose service category\n(Painting / Plumbing / Electrical / ...)"] --> Desc["Describe requirement,\nbudget &amp; location"]
+    Desc --> Img["Upload images"]
+    Img --> Req["Request submitted,\nstatus: PENDING_ASSIGNMENT"]
+    Req --> Rank["Admin reviews ranked\ncandidate professionals"]
+    Rank --> Assign["Professional assigned,\nstatus: PENDING"]
+    Assign --> Quote["Quotation issued"]
+    Quote --> Exec["Execution"]
+    Exec --> Complete["Completed &amp; reviewed"]
+
+    classDef mvp fill:#e1f0e6,stroke:#2f7a4d,color:#1c2430
+    classDef roadmap fill:#e6edf3,stroke:#4a6a8a,color:#1c2430,stroke-dasharray: 4 3
+    class Sel,Desc,Req,Rank,Assign,Quote,Complete mvp
+    class Img,Exec roadmap
+</pre>
+  </div>
+
+  <table>
+    <thead><tr><th></th><th>Full Home Project</th><th>Individual Service</th></tr></thead>
+    <tbody>
+      <tr><td>Who can be picked directly</td><td>Customer may choose a professional</td><td>Nobody &mdash; <code>professionalId</code> must be absent, request is rejected otherwise</td></tr>
+      <tr><td>Category requirement</td><td>Optional</td><td>Required, and must belong to the <code>INDIVIDUAL_SERVICE</code> service group</td></tr>
+      <tr><td>Portfolio browsing</td><td>Central to the decision</td><td>Optional, secondary to trade &amp; availability</td></tr>
+      <tr><td>Starting status</td><td><code>PENDING</code> (if pre-picked) or <code>PENDING_ASSIGNMENT</code></td><td>Always <code>PENDING_ASSIGNMENT</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout roadmap">
+    <div class="label">Roadmap note</div>
+    Image upload for describing a requirement (e.g. a photo of the leak) is designed
+    for but not yet wired to real storage &mdash; today, portfolio and profile images
+    are plain URL strings; a Cloudinary-backed upload flow is a planned phase.
+  </div>
+</section>
+
+<!-- ============ 8. CORE FEATURES ============ -->
+<section class="doc-section page" id="s8">
+  <div class="sec-eyebrow">Section 08</div>
+  <h2 class="sec-title"><span class="n">08</span>Core Features</h2>
+  <p class="lede">Every module in the platform, and how it relates to the others.</p>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+graph LR
+    Auth["Authentication"] --> User["User Management"]
+    User --> Prof["Professional Management"]
+    Prof --> Port["Portfolio"]
+    User --> Book["Service Requests / Booking"]
+    Port -.->|informs choice| Book
+    Book --> Match["Professional Matching"]
+    Match --> Book
+    Book --> Quote["Quotation"]
+    Quote --> Rev["Review"]
+    Prof --> Rev
+    Admin["Admin"] --> Match
+    Admin --> Book
+</pre>
+    <div class="diagram-caption">Solid arrows: direct dependency. Dashed: informs a decision without a hard link.</div>
+  </div>
+
+  <table>
+    <thead><tr><th>Module</th><th>Responsibility</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Authentication</td><td>Register (customer/professional), login, JWT issuance, BCrypt password hashing</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>User Management</td><td>Get/update own profile, including professional-specific fields</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Professional Management</td><td>Public single-profile lookup: bio, experience, specialization, availability, rating</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Portfolio</td><td>Work-sample catalog: browse/search/filter/sort, item detail, upload</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Service Requests / Booking</td><td>Full Home Project or Individual Service request, full lifecycle state machine</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Consultation</td><td>Represented via booking schedule &amp; notes; no dedicated consultation entity yet</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Quotation</td><td>Itemized estimate: draft &rarr; send &rarr; customer accepts/rejects</td><td><span class="pill mvp">MVP</span></td></tr>
+      <tr><td>Project Management</td><td>Multi-stage execution tracking beyond a single status field</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Milestones</td><td>Breaking a project into payable, trackable phases</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Payments</td><td>In-platform payment collection &amp; reconciliation</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Notifications</td><td>Real-time/email/push updates on booking &amp; quotation events</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Media Upload</td><td>Real file storage (e.g. Cloudinary) for portfolio &amp; requirement images</td><td><span class="pill roadmap">Roadmap</span></td></tr>
+      <tr><td>Admin</td><td>Ranked professional recommendations, manual assignment</td><td><span class="pill mvp">MVP</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 9. ARCHITECTURE ============ -->
+<section class="doc-section page" id="s9">
+  <div class="sec-eyebrow">Section 09</div>
+  <h2 class="sec-title"><span class="n">09</span>Architecture</h2>
+  <p class="lede">A conventional, deliberately boring layered backend &mdash; boring is a
+  feature when the goal is a codebase any engineer can pick up quickly.</p>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+flowchart TD
+    C["Controller\nHTTP mapping, role checks (@PreAuthorize), request validation"] --> M["Mapper\nEntity &#8644; DTO conversion"]
+    M --> S["Service\nBusiness rules, state-transition validation, @Transactional"]
+    S --> R["Repository\nSpring Data JPA &mdash; derived methods &amp; Specification joins only"]
+    R --> DB[("PostgreSQL\nhosted on Neon, schema owned by Flyway")]
+</pre>
+    <div class="diagram-caption">Every request flows top to bottom &mdash; no layer is ever skipped.</div>
+  </div>
+
+  <div class="card-grid">
+    <div class="feature-card">
+      <h4>Why Clean Architecture</h4>
+      <p style="font-size:0.9rem;color:var(--sub);">Controllers never see entities and services
+      never see HTTP concerns &mdash; each layer can change independently. A new frontend, or
+      a switch from REST to GraphQL, would only touch the controller layer.</p>
+    </div>
+    <div class="feature-card">
+      <h4>JWT Authentication</h4>
+      <p style="font-size:0.9rem;color:var(--sub);">Stateless bearer tokens &mdash; no server-side
+      session store, so the API scales horizontally with zero session-affinity concerns.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Role-Based Authorization</h4>
+      <p style="font-size:0.9rem;color:var(--sub);"><code>@PreAuthorize("hasRole('X')")</code> on
+      every state-changing endpoint &mdash; enforced at the method level, not left to
+      controller-body <code>if</code> checks that are easy to forget.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10. DOMAIN MODEL ============ -->
+<section class="doc-section page" id="s10">
+  <div class="sec-eyebrow">Section 10</div>
+  <h2 class="sec-title"><span class="n">10</span>Domain Model</h2>
+  <p class="lede">One account type for every trade. Portfolio content splits into a generic
+  base plus an optional interior-design detail &mdash; the same "base + optional
+  detail" shape used twice in this schema.</p>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+erDiagram
+    USER ||--o| PROFESSIONAL_PROFILE : "has, if role=PROFESSIONAL"
+    USER ||--o{ BOOKING : "books (customer)"
+    USER ||--o{ BOOKING : "assigned to (professional)"
+    USER ||--o{ PORTFOLIO_ITEM : "showcases"
+    CATEGORY ||--o{ PORTFOLIO_ITEM : "classifies"
+    CATEGORY ||--o{ BOOKING : "classifies"
+    PORTFOLIO_ITEM ||--o| INTERIOR_DESIGN_DETAILS : "optional satellite"
+    BOOKING |o--o| PORTFOLIO_ITEM : "optionally references"
+    BOOKING ||--o| QUOTATION : "gets"
+    QUOTATION ||--o{ QUOTATION_LINE_ITEM : "itemizes"
+    BOOKING ||--o| REVIEW : "gets, once completed"
+
+    USER {
+        bigint id PK
+        string role "CUSTOMER / PROFESSIONAL / ADMIN"
+        string email
+        string full_name
+    }
+    PROFESSIONAL_PROFILE {
+        bigint user_id FK
+        string specialization
+        string city
+        int years_experience
+        string availability_status
+        numeric average_rating
+    }
+    PORTFOLIO_ITEM {
+        bigint id PK
+        bigint professional_id FK
+        bigint category_id FK
+        string title
+        text description
+        string cover_image_url
+    }
+    INTERIOR_DESIGN_DETAILS {
+        bigint id PK
+        bigint portfolio_item_id FK "unique"
+        string style_tag
+        numeric price_estimate
+    }
+    CATEGORY {
+        bigint id PK
+        string name
+        string service_group "HOME_PROJECT / INDIVIDUAL_SERVICE"
+    }
+    BOOKING {
+        bigint id PK
+        string request_type "FULL_HOME_PROJECT / INDIVIDUAL_SERVICE"
+        bigint customer_id FK
+        bigint professional_id FK "nullable"
+        bigint portfolio_item_id FK "nullable"
+        string status
+    }
+    QUOTATION {
+        bigint id PK
+        bigint booking_id FK
+        string status
+    }
+    REVIEW {
+        bigint id PK
+        bigint booking_id FK
+        int rating
+        text comment
+    }
+</pre>
+  </div>
+
+  <table>
+    <thead><tr><th>Entity</th><th>Represents</th></tr></thead>
+    <tbody>
+      <tr><td><strong>User</strong></td><td>Any account &mdash; role determines whether it's a customer, professional, or admin.</td></tr>
+      <tr><td><strong>ProfessionalProfile</strong></td><td>Optional satellite on User, populated only for professionals: bio, specialization, city, experience, availability, rating.</td></tr>
+      <tr><td><strong>PortfolioItem</strong></td><td>A work sample &mdash; generic across every trade.</td></tr>
+      <tr><td><strong>InteriorDesignDetails</strong></td><td>Optional satellite on PortfolioItem, populated only for interior-design work: style tag, price estimate.</td></tr>
+      <tr><td><strong>Category</strong></td><td>A service type, tagged as belonging to a Full Home Project or an Individual Service.</td></tr>
+      <tr><td><strong>Booking</strong></td><td>A single request &mdash; the spine of the entire customer journey, carries its own state machine.</td></tr>
+      <tr><td><strong>Quotation</strong></td><td>An itemized estimate tied to one booking, with its own accept/reject lifecycle.</td></tr>
+      <tr><td><strong>Review</strong></td><td>A 1&ndash;5 rating + comment, one per completed booking, feeding the professional's aggregate rating.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 11. DESIGN DECISIONS ============ -->
+<section class="doc-section page" id="s11">
+  <div class="sec-eyebrow">Section 11</div>
+  <h2 class="sec-title"><span class="n">11</span>Important Design Decisions</h2>
+  <p class="lede">Every major structural choice, and the reasoning behind it.</p>
+
+  <div class="decision-row">
+    <div class="q">Why "Professional" instead of only "Designer"?</div>
+    <div class="grid2">
+      <div><div class="h">Alternative considered</div><div class="rejected">Keep the account type narrowly named "Designer," add separate account types per trade later.</div></div>
+      <div><div class="h">Chosen approach</div><div class="chosen">One <code>PROFESSIONAL</code> role from the start &mdash; a painter, plumber, or designer is the same kind of account, distinguished by profile data, not by schema.</div></div>
+    </div>
+  </div>
+  <div class="decision-row">
+    <div class="q">Why support both Full Projects and Individual Services?</div>
+    <div class="grid2">
+      <div><div class="h">Alternative considered</div><div class="rejected">Two separate booking systems, or two separate apps.</div></div>
+      <div><div class="h">Chosen approach</div><div class="chosen">One <code>Booking</code> entity with a <code>requestType</code> flag &mdash; shared lifecycle, shared quotation/review flow, different validation rules per type.</div></div>
+    </div>
+  </div>
+  <div class="decision-row">
+    <div class="q">Why do Portfolios exist as a separate concept from bookings?</div>
+    <div class="grid2">
+      <div><div class="h">Alternative considered</div><div class="rejected">Attach past-work images directly to the professional profile as a flat list.</div></div>
+      <div><div class="h">Chosen approach</div><div class="chosen">A first-class <code>PortfolioItem</code> catalog &mdash; searchable, filterable, sortable, and reusable as evidence in the matching algorithm.</div></div>
+    </div>
+  </div>
+  <div class="decision-row">
+    <div class="q">Why split interior-design fields into a satellite table?</div>
+    <div class="grid2">
+      <div><div class="h">Alternative considered</div><div class="rejected">A generic JSON metadata blob on every portfolio item; or keep style/price on the base table.</div></div>
+      <div><div class="h">Chosen approach</div><div class="chosen">Optional <code>InteriorDesignDetails</code> 1-to-1 satellite &mdash; keeps every trade's item the same shape while preserving typed, filterable search for interior design specifically, with zero schemaless data.</div></div>
+    </div>
+  </div>
+  <div class="decision-row">
+    <div class="q">Why JWT instead of server-side sessions?</div>
+    <div class="grid2">
+      <div><div class="h">Alternative considered</div><div class="rejected">Session cookies backed by a server-side session store.</div></div>
+      <div><div class="h">Chosen approach</div><div class="chosen">Stateless JWT bearer tokens &mdash; no session affinity, the API scales horizontally without shared session state.</div></div>
+    </div>
+  </div>
+  <div class="decision-row">
+    <div class="q">Why role-based security at the method level?</div>
+    <div class="grid2">
+      <div><div class="h">Alternative considered</div><div class="rejected">Manual role checks written inside each controller method body.</div></div>
+      <div><div class="h">Chosen approach</div><div class="chosen"><code>@PreAuthorize</code> declared on the endpoint itself &mdash; the rule is visible at a glance and can't be silently skipped.</div></div>
+    </div>
+  </div>
+  <div class="decision-row">
+    <div class="q">Why a strict layered architecture?</div>
+    <div class="grid2">
+      <div><div class="h">Alternative considered</div><div class="rejected">Fat controllers that talk to repositories directly for "simple" endpoints.</div></div>
+      <div><div class="h">Chosen approach</div><div class="chosen">Controller &rarr; Mapper &rarr; Service &rarr; Repository, always &mdash; consistency means any engineer can predict where logic lives.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 12. API OVERVIEW ============ -->
+<section class="doc-section page" id="s12">
+  <div class="sec-eyebrow">Section 12</div>
+  <h2 class="sec-title"><span class="n">12</span>API Overview</h2>
+  <p class="lede">High-level responsibilities by module &mdash; not an exhaustive endpoint
+  reference (see the OpenAPI/Swagger UI for that).</p>
+
+  <table>
+    <thead><tr><th>Module</th><th>Responsibility</th></tr></thead>
+    <tbody>
+      <tr><td>Authentication</td><td>Register as customer or professional, log in, receive a JWT.</td></tr>
+      <tr><td>User</td><td>Read and update the caller's own profile.</td></tr>
+      <tr><td>Professionals</td><td>Public lookup of a single professional's profile by id.</td></tr>
+      <tr><td>Portfolio</td><td>Browse/search/filter the catalog; get one item's detail; upload a new item.</td></tr>
+      <tr><td>Bookings</td><td>Create, list, view, cancel a booking; update its status; admin assignment.</td></tr>
+      <tr><td>Professional Matching</td><td>Admin-only ranked candidate list for a booking awaiting assignment.</td></tr>
+      <tr><td>Quotation</td><td>Draft, send, accept, or reject a booking's itemized estimate.</td></tr>
+      <tr><td>Review</td><td>Leave a rating + comment for a completed booking.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 13. SECURITY ============ -->
+<section class="doc-section page" id="s13">
+  <div class="sec-eyebrow">Section 13</div>
+  <h2 class="sec-title"><span class="n">13</span>Security</h2>
+  <p class="lede">Stateless, token-based authentication with method-level role enforcement
+  on every write operation.</p>
+
+  <div class="diagram-panel">
+<pre class="mermaid">
+sequenceDiagram
+    actor U as User
+    participant API as API
+    participant Auth as AuthService
+    participant Filter as JwtAuthFilter
+    participant Svc as Protected Endpoint
+
+    U->>API: POST /auth/login (email, password)
+    API->>Auth: verify credentials (BCrypt compare)
+    Auth-->>U: JWT access token
+
+    U->>API: Request + Authorization: Bearer &lt;token&gt;
+    API->>Filter: validate token signature &amp; expiry
+    alt Token valid
+        Filter->>Svc: forward request, principal attached
+        Svc-->>U: 200 + response
+    else Token invalid/missing
+        Filter-->>U: 401 Unauthorized
+    end
+</pre>
+  </div>
+
+  <table>
+    <thead><tr><th>Control</th><th>How it works</th></tr></thead>
+    <tbody>
+      <tr><td>Password hashing</td><td>BCrypt &mdash; passwords are never stored or compared in plain text.</td></tr>
+      <tr><td>Token validation</td><td>Every request (except public routes) passes through a JWT filter that checks signature and expiry before reaching a controller.</td></tr>
+      <tr><td>Role-based authorization</td><td><code>@PreAuthorize("hasRole('X')")</code> on each state-changing endpoint &mdash; CUSTOMER, PROFESSIONAL, and ADMIN each see only what their role permits.</td></tr>
+      <tr><td>Public endpoints</td><td>Auth (register/login), catalog browsing (<code>GET /portfolio</code>, <code>/categories</code>, <code>/professionals/{id}</code>) &mdash; explicitly allowlisted, everything else defaults to requiring authentication.</td></tr>
+      <tr><td>Request validation</td><td>Bean Validation (<code>@NotNull</code>, <code>@Size</code>, <code>@DecimalMin</code>, etc.) on every incoming DTO &mdash; malformed requests are rejected before touching business logic.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 14. FUTURE ROADMAP ============ -->
+<section class="doc-section page" id="s14">
+  <div class="sec-eyebrow">Section 14</div>
+  <h2 class="sec-title"><span class="n">14</span>Future Roadmap</h2>
+  <p class="lede">The MVP is deliberately narrow &mdash; every roadmap item below was designed
+  around, not designed against.</p>
+
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="phase">Phase 0 &mdash; Shipped</div>
+      <h4>Core Marketplace MVP</h4>
+      <p style="font-size:0.9rem;color:var(--sub);">Auth, profiles, portfolio (browse + upload), booking lifecycle, quotations, admin-assisted matching, reviews.</p>
+      <div class="tags"><span class="tag">Auth</span><span class="tag">Portfolio</span><span class="tag">Booking</span><span class="tag">Quotation</span><span class="tag">Review</span></div>
+    </div>
+    <div class="tl-item roadmap">
+      <div class="phase">Phase 1 &mdash; Trust &amp; Convenience</div>
+      <h4>Real Media, Real Notifications</h4>
+      <p style="font-size:0.9rem;color:var(--sub);">Cloudinary-backed image upload, refresh tokens, OTP &amp; password reset, real-time/email/push notifications on booking &amp; quotation events.</p>
+      <div class="tags"><span class="tag">Media Upload</span><span class="tag">Notifications</span><span class="tag">Auth hardening</span></div>
+    </div>
+    <div class="tl-item roadmap">
+      <div class="phase">Phase 2 &mdash; Execution &amp; Money</div>
+      <h4>Project Management &amp; Payments</h4>
+      <p style="font-size:0.9rem;color:var(--sub);">Multi-stage project tracking, milestone breakdowns, in-platform payment collection (Razorpay), material procurement.</p>
+      <div class="tags"><span class="tag">Milestones</span><span class="tag">Payments</span><span class="tag">Procurement</span></div>
+    </div>
+    <div class="tl-item roadmap">
+      <div class="phase">Phase 3 &mdash; Intelligence &amp; Scale</div>
+      <h4>Smarter Matching, Richer Discovery</h4>
+      <p style="font-size:0.9rem;color:var(--sub);">AI-assisted recommendations, automatic (not just admin-reviewed) professional assignment, scheduling optimization, a searchable professional directory, in-app chat, analytics dashboards, a vendor marketplace.</p>
+      <div class="tags"><span class="tag">AI Recommendations</span><span class="tag">Auto-Assignment</span><span class="tag">Chat</span><span class="tag">Analytics</span><span class="tag">Vendor Marketplace</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 15. CONCLUSION ============ -->
+<section class="doc-section page" id="s15">
+  <div class="sec-eyebrow">Section 15</div>
+  <h2 class="sec-title"><span class="n">15</span>Conclusion</h2>
+  <p class="lede">The Velora MVP is small on purpose &mdash; and shaped so that "small" never
+  means "narrow."</p>
+
+  <div class="callout mvp">
+    <div class="label">What's shipped</div>
+    A working marketplace: any home-service professional can be discovered, booked,
+    quoted, and reviewed, across two distinct journeys that share one account model,
+    one portfolio model, and one booking lifecycle.
+  </div>
+
+  <div class="callout">
+    <div class="label">Why it scales</div>
+    Every structural decision in this document &mdash; one <code>PROFESSIONAL</code> role
+    instead of per-trade accounts, one <code>Booking</code> with a <code>requestType</code>
+    instead of two systems, an optional satellite table instead of rigid columns
+    &mdash; exists specifically so that the next trade, the next journey, or the next
+    feature slots in without reshaping what's already there. The roadmap in
+    Section 14 is not a rewrite plan; it's a list of additions.
+  </div>
+
+  <p style="margin-top:1.5rem;">Velora starts as a trustworthy way to book anyone from an
+  interior designer to a plumber. The architecture behind it is built to become the
+  operating system for how a home gets taken care of.</p>
+</section>
+
+</div>
