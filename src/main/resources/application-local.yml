@@ -1,0 +1,14 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+app:
+  jwt:
+    # Dev-only secret. NEVER use in production - real deployments must set JWT_SECRET env var.
+    secret: ${JWT_SECRET:dev-only-local-secret-key-change-me-please-32bytesmin}
+
+logging:
+  level:
+    com.velora.backend: DEBUG
+    org.hibernate.SQL: DEBUG
