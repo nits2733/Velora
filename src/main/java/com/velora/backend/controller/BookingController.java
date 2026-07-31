@@ -1,10 +1,13 @@
 package com.velora.backend.controller;
 
+import com.velora.backend.dto.booking.AssignDesignerRequest;
 import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.dto.booking.BookingStatusUpdateRequest;
+import com.velora.backend.dto.booking.DesignerMatchResponse;
 import com.velora.backend.security.UserPrincipal;
 import com.velora.backend.service.BookingService;
+import com.velora.backend.service.DesignerMatchingService;
 import com.velora.backend.util.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/bookings")
 @RequiredArgsConstructor
@@ -35,6 +40,7 @@ public class BookingController {
     private static final int MAX_PAGE_SIZE = 50;
 
     private final BookingService bookingService;
+    private final DesignerMatchingService designerMatchingService;
 
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -80,5 +86,20 @@ public class BookingController {
                                                           @PathVariable Long id,
                                                           @Valid @RequestBody BookingStatusUpdateRequest request) {
         return ResponseEntity.ok(bookingService.updateStatus(principal.getId(), id, request.status()));
+    }
+
+    @PatchMapping("/{id}/assign")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Assign a designer to a booking awaiting assignment (admin only)")
+    public ResponseEntity<BookingResponse> assign(@PathVariable Long id,
+                                                   @Valid @RequestBody AssignDesignerRequest request) {
+        return ResponseEntity.ok(bookingService.assignDesigner(id, request.designerId()));
+    }
+
+    @GetMapping("/{id}/recommendations")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Rank candidate designers for a booking awaiting assignment (admin only)")
+    public ResponseEntity<List<DesignerMatchResponse>> recommendations(@PathVariable Long id) {
+        return ResponseEntity.ok(designerMatchingService.recommend(id));
     }
 }

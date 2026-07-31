@@ -30,6 +30,10 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
+        if (request.role() == Role.ADMIN) {
+            throw new IllegalArgumentException("Cannot self-register as an admin account");
+        }
+
         String normalizedEmail = request.email().trim().toLowerCase();
 
         if (userRepository.existsByEmail(normalizedEmail)) {

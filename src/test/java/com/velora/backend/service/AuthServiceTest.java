@@ -91,4 +91,15 @@ class AuthServiceTest {
 
         org.mockito.Mockito.verify(designerProfileRepository).save(any());
     }
+
+    @Test
+    void registerRejectsAdminRole() {
+        RegisterRequest request = new RegisterRequest("wannabe.admin@velora.test", "password1", "Someone", null, Role.ADMIN);
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cannot self-register as an admin");
+
+        org.mockito.Mockito.verifyNoInteractions(userRepository);
+    }
 }

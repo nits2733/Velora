@@ -3,6 +3,8 @@ package com.velora.backend.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -18,6 +20,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -47,6 +50,18 @@ public class DesignerProfile {
     private String specialization;
 
     private String city;
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "availability_status", nullable = false)
+    private AvailabilityStatus availabilityStatus = AvailabilityStatus.AVAILABLE;
+
+    @Column(name = "average_rating", precision = 3, scale = 2)
+    private BigDecimal averageRating;
+
+    @Column(name = "rating_count", nullable = false)
+    @Builder.Default
+    private int ratingCount = 0;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)

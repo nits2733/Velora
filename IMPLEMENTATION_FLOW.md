@@ -29,31 +29,44 @@ it works here, with small examples.
 14. [Full Request Lifecycle (Controller → Service → Repository → DB)](#14-full-request-lifecycle-controller--service--repository--db)
 15. [Feature Walkthrough: Design Catalog (Search/Filter/Pagination)](#15-feature-walkthrough-design-catalog-searchfilterpagination)
 16. [Feature Walkthrough: Bookings (State Machine)](#16-feature-walkthrough-bookings-state-machine)
-17. [Feature Walkthrough: Quotations (Post-Consultation Estimate)](#17-feature-walkthrough-quotations-post-consultation-estimate)
-18. [Feature Walkthrough: User Profile (Role-Conditional Data)](#18-feature-walkthrough-user-profile-role-conditional-data)
-19. [Validation Flow](#19-validation-flow)
-20. [Exception Handling Flow](#20-exception-handling-flow)
-21. [API Documentation (Swagger/OpenAPI)](#21-api-documentation-swaggeropenapi)
-22. [Environment & Secrets Management](#22-environment--secrets-management)
-23. [Quick Reference: All Endpoints](#23-quick-reference-all-endpoints)
+17. [Feature Walkthrough: Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching)
+18. [Feature Walkthrough: Quotations (Post-Consultation Estimate)](#18-feature-walkthrough-quotations-post-consultation-estimate)
+19. [Feature Walkthrough: Reviews & Ratings](#19-feature-walkthrough-reviews--ratings)
+20. [Feature Walkthrough: User Profile (Role-Conditional Data)](#20-feature-walkthrough-user-profile-role-conditional-data)
+21. [Validation Flow](#21-validation-flow)
+22. [Exception Handling Flow](#22-exception-handling-flow)
+23. [API Documentation (Swagger/OpenAPI)](#23-api-documentation-swaggeropenapi)
+24. [Environment & Secrets Management](#24-environment--secrets-management)
+25. [Quick Reference: All Endpoints](#25-quick-reference-all-endpoints)
 
 ---
 
 ## 1. Project Purpose & Tech Stack
 
-Velora is the backend API for an interior-design booking app. It has two kinds of
+Velora is the backend API for an interior-design booking app. It has three kinds of
 users interacting with it:
 
-- **Customers** — browse a catalog of interior designs, book consultations with designers,
-  and receive/respond to line-item quotations after a consultation.
-- **Designers** — publish designs (conceptually; upload is not yet built), manage the
-  bookings customers make with them, and turn a booking into a scoped quotation (line
-  items + total) once the consultation has happened.
-- Both share one `users` table, distinguished by a `role` column.
+- **Customers** — browse designer portfolios, either pick a specific designer to book
+  directly or ask Velora to assign the best-fit one instead, receive/respond to
+  line-item quotations after a consultation, and leave a rating once the work is done.
+- **Designers** — maintain a profile and portfolio (conceptually; portfolio upload
+  itself is not yet built), toggle their own availability, manage the bookings
+  customers make with them, and turn a booking into a scoped quotation (line items +
+  total) once the consultation has happened.
+- **Admins** — the only role that can't self-register (see
+  [Authentication Flow — Register](#10-authentication-flow--register)) — review
+  bookings a customer asked Velora to staff, request a ranked list of candidate
+  designers for one, and assign the pick.
+- All three share one `users` table, distinguished by a `role` column.
 
 A booking's purpose is to get a designer and customer talking; a **quotation** is what
 turns that conversation into a priced, actionable scope of work the customer can accept
-or reject. See [Feature Walkthrough: Quotations](#17-feature-walkthrough-quotations-post-consultation-estimate).
+or reject. See [Feature Walkthrough: Quotations](#18-feature-walkthrough-quotations-post-consultation-estimate).
+A designer isn't always picked by the customer directly — see
+[Feature Walkthrough: Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching)
+for the "let Velora choose" path, and
+[Feature Walkthrough: Reviews & Ratings](#19-feature-walkthrough-reviews--ratings) for
+how a completed booking's outcome feeds back into that same matching logic.
 
 **Tech stack:**
 
@@ -89,15 +102,20 @@ src/main/java/com/velora/backend/
 │   ├── UserController.java          # /api/users/**
 │   ├── DesignController.java        # /api/designs/**
 │   ├── CategoryController.java      # /api/categories/**
-│   ├── BookingController.java       # /api/bookings/**
-│   └── QuotationController.java     # /api/bookings/{bookingId}/quotation
+│   ├── DesignerController.java      # /api/designers/{id} (public profile)
+│   ├── BookingController.java       # /api/bookings/** (incl. /assign, /recommendations)
+│   ├── QuotationController.java     # /api/bookings/{bookingId}/quotation
+│   └── ReviewController.java        # /api/bookings/{bookingId}/review
 ├── service/                          # Business logic (the "brain")
 │   ├── AuthService.java
 │   ├── UserService.java
 │   ├── DesignService.java
 │   ├── CategoryService.java
+│   ├── DesignerService.java         # Public designer profile lookup
 │   ├── BookingService.java
-│   └── QuotationService.java
+│   ├── DesignerMatchingService.java # Scores/ranks candidate designers
+│   ├── QuotationService.java
+│   └── ReviewService.java
 ├── repository/                       # Data access (talks to the database)
 │   ├── UserRepository.java
 │   ├── DesignerProfileRepository.java
@@ -105,26 +123,33 @@ src/main/java/com/velora/backend/
 │   ├── DesignSpecifications.java     # Dynamic query building for search/filter
 │   ├── CategoryRepository.java
 │   ├── BookingRepository.java
-│   └── QuotationRepository.java
+│   ├── QuotationRepository.java
+│   └── ReviewRepository.java
 ├── entity/                            # JPA entities = database tables as Java classes
-│   ├── User.java, Role.java
-│   ├── DesignerProfile.java
+│   ├── User.java, Role.java          # Role now: CUSTOMER, DESIGNER, ADMIN
+│   ├── DesignerProfile.java, AvailabilityStatus.java
 │   ├── Category.java
 │   ├── Design.java
-│   ├── Booking.java, BookingStatus.java
-│   └── Quotation.java, QuotationLineItem.java, QuotationStatus.java
+│   ├── Booking.java, BookingStatus.java   # BookingStatus now includes PENDING_ASSIGNMENT
+│   ├── Quotation.java, QuotationLineItem.java, QuotationStatus.java
+│   └── Review.java
 ├── dto/                               # Data Transfer Objects = what the API sends/receives
-│   ├── auth/   (RegisterRequest, LoginRequest, AuthResponse)
-│   ├── user/   (UserProfileResponse, UpdateProfileRequest, DesignerProfileResponse)
-│   ├── design/ (DesignResponse, DesignSummaryResponse, CategoryResponse)
-│   ├── booking/(BookingRequest, BookingResponse, BookingStatusUpdateRequest)
-│   └── quotation/(SaveQuotationRequest, QuotationLineItemRequest,
-│                  QuotationResponse, QuotationLineItemResponse)
+│   ├── auth/     (RegisterRequest, LoginRequest, AuthResponse)
+│   ├── user/     (UserProfileResponse, UpdateProfileRequest, DesignerProfileResponse)
+│   ├── design/   (DesignResponse, DesignSummaryResponse, CategoryResponse)
+│   ├── designer/ (DesignerPublicProfileResponse)
+│   ├── booking/  (BookingRequest, BookingResponse, BookingStatusUpdateRequest,
+│   │              AssignDesignerRequest, DesignerMatchResponse)
+│   ├── quotation/(SaveQuotationRequest, QuotationLineItemRequest,
+│   │              QuotationResponse, QuotationLineItemResponse)
+│   └── review/   (CreateReviewRequest, ReviewResponse)
 ├── mapper/                            # Converts entities <-> DTOs
 │   ├── UserMapper.java
 │   ├── DesignMapper.java
+│   ├── DesignerMapper.java
 │   ├── BookingMapper.java
-│   └── QuotationMapper.java
+│   ├── QuotationMapper.java
+│   └── ReviewMapper.java
 ├── security/                          # JWT + Spring Security plumbing
 │   ├── JwtService.java               # Create/parse/validate tokens
 │   ├── JwtAuthFilter.java            # Runs on every request, checks the token
@@ -146,9 +171,12 @@ src/main/resources/
 ├── application.yml                   # Main config (reads from env vars)
 ├── application-local.yml             # Overrides for local dev (`local` profile)
 └── db/migration/
-    ├── V1__init_schema.sql           # Flyway migration: creates all tables
-    ├── V2__seed_data.sql             # Seed categories, a demo designer, sample designs
-    └── V3__quotations.sql            # Adds quotations + quotation_line_items tables
+    ├── V1__init_schema.sql                     # Creates all tables
+    ├── V2__seed_data.sql                       # Seed categories, a demo designer, sample designs
+    ├── V3__quotations.sql                      # Adds quotations + quotation_line_items tables
+    ├── V4__admin_and_designer_assignment.sql   # ADMIN role, nullable booking.designer_id, seeds one admin
+    ├── V5__ratings_and_availability.sql        # Adds reviews table; availability/rating columns; booking matching columns
+    └── V6__widen_review_rating_column.sql      # Fixes a column-type mismatch found after V5 (see note below)
 ```
 
 **Why this layered structure?**
@@ -267,57 +295,62 @@ production) applies the exact same SQL in the exact same order, tracked in a
 
 ```
 users                       designer_profiles
-┌─────────────────┐         ┌─────────────────────┐
-│ id (PK)         │◄───────┐│ id (PK)              │
-│ email (unique)  │        └│ user_id (FK, unique) │ 1-to-1
-│ password_hash   │         │ bio                  │
-│ full_name       │         │ years_experience     │
-│ phone           │         │ specialization       │
-│ role            │         │ city                 │
-│ created_at      │         └─────────────────────┘
-│ updated_at      │
-└─────────────────┘
-        ▲   ▲
+┌─────────────────┐         ┌───────────────────────┐
+│ id (PK)         │◄───────┐│ id (PK)                │
+│ email (unique)  │        └│ user_id (FK, unique)   │ 1-to-1
+│ password_hash   │         │ bio                    │
+│ full_name       │         │ years_experience       │
+│ phone           │         │ specialization         │
+│ role            │         │ city                   │
+│ created_at      │         │ availability_status    │  ← V5
+│ updated_at      │         │ average_rating         │  ← V5 (recomputed from reviews)
+└─────────────────┘         │ rating_count            │  ← V5
+        ▲   ▲                └───────────────────────┘
         │   │
         │   └───────────────────────┐
         │                           │
 categories                 designs   │            bookings
-┌───────────────┐         ┌──────────┴──────┐    ┌───────────────────┐
-│ id (PK)       │◄────────│ category_id (FK) │    │ id (PK)            │
-│ name (unique) │        1│ designer_id (FK) │───►│ customer_id (FK)───┼──► users
-│ description   │  to    │ id (PK)           │    │ designer_id (FK)───┼──► users
-└───────────────┘  many  │ title             │    │ design_id (FK, null)┼─► designs
-                          │ description       │    │ scheduled_at        │
-                          │ cover_image_url   │    │ status              │
-                          │ price_estimate    │    │ notes               │
-                          │ style_tag         │    │ created_at          │
-                          └──────────────────┘    └───────────────────┘
-                                                              ▲
-                                                              │ 1-to-1 (booking_id UNIQUE)
-                                                              │
-                                                    quotations │
-                                                    ┌─────────┴──────────┐
-                                                    │ id (PK)             │
-                                                    │ booking_id (FK, unique) │
-                                                    │ status              │
-                                                    │ total_amount        │
-                                                    │ notes               │
-                                                    │ created_at          │
-                                                    │ updated_at          │
-                                                    └──────────┬──────────┘
-                                                               │ 1-to-many
-                                                               ▼
-                                                    quotation_line_items
-                                                    ┌──────────────────────┐
-                                                    │ id (PK)               │
-                                                    │ quotation_id (FK)     │
-                                                    │ description           │
-                                                    │ quantity              │
-                                                    │ unit                  │
-                                                    │ unit_price            │
-                                                    │ amount                │
-                                                    │ sort_order            │
-                                                    └──────────────────────┘
+┌───────────────┐         ┌──────────┴──────┐    ┌──────────────────────────┐
+│ id (PK)       │◄────────│ category_id (FK) │    │ id (PK)                   │
+│ name (unique) │        1│ designer_id (FK) │───►│ customer_id (FK)──────────┼─► users
+│ description   │  to    │ id (PK)           │    │ designer_id (FK, nullable)┼─► users   ← V4: nullable
+└───────────────┘  many  │ title             │    │ design_id (FK, null)      │─► designs
+        ▲                 │ description       │    │ category_id (FK, null)   │─► categories  ← V5
+        │                 │ cover_image_url   │    │ preferred_style           │  ← V5
+        │                 │ price_estimate    │    │ budget                    │  ← V5
+        └─────────────────┤ style_tag         │    │ location                  │  ← V5
+             (optional,   └──────────────────┘    │ scheduled_at              │
+              V5 match                            │ status                    │  ← V4: + PENDING_ASSIGNMENT
+              signal)                             │ notes                     │
+                                                    │ created_at                │
+                                                    └──────────┬───────────────┘
+                                                               │
+                                       ┌───────────────────────┼────────────────────────┐
+                                       │ 1-to-1 (booking_id UNIQUE)                      │ 1-to-1 (booking_id UNIQUE, V5)
+                                       ▼                                                  ▼
+                             quotations                                          reviews
+                             ┌─────────────────────┐                             ┌──────────────────┐
+                             │ id (PK)              │                             │ id (PK)            │
+                             │ booking_id (FK, unique) │                          │ booking_id (FK, unique) │
+                             │ status                │                             │ customer_id (FK) │
+                             │ total_amount          │                             │ designer_id (FK) │
+                             │ notes                 │                             │ rating (1-5)      │
+                             │ created_at            │                             │ comment            │
+                             │ updated_at            │                             │ created_at         │
+                             └──────────┬────────────┘                            └──────────────────┘
+                                        │ 1-to-many
+                                        ▼
+                             quotation_line_items
+                             ┌──────────────────────┐
+                             │ id (PK)               │
+                             │ quotation_id (FK)     │
+                             │ description           │
+                             │ quantity              │
+                             │ unit                  │
+                             │ unit_price            │
+                             │ amount                │
+                             │ sort_order            │
+                             └──────────────────────┘
 ```
 
 **Relationships:**
@@ -327,19 +360,33 @@ categories                 designs   │            bookings
 | `users` ↔ `designer_profiles` | One-to-one. Only users with `role = DESIGNER` get a row here. |
 | `categories` ↔ `designs`      | One-to-many. Every design belongs to exactly one category.    |
 | `users` ↔ `designs`            | One-to-many (as designer). A designer can publish many designs. |
-| `users` ↔ `bookings`           | One-to-many, **twice** — once as `customer_id`, once as `designer_id`. |
+| `users` ↔ `bookings`           | One-to-many, **twice** — once as `customer_id`, once as `designer_id`. `designer_id` became **nullable** in `V4` — a booking can exist with no designer at all while awaiting assignment. |
 | `designs` ↔ `bookings`         | Optional. A booking can reference a specific design, or be a general consultation (`design_id` is nullable). |
+| `categories` ↔ `bookings`      | Optional, added in `V5`. Only populated on the "let Velora choose" path — it's one of the signals `DesignerMatchingService` scores candidates against, alongside the also-new `preferred_style`/`budget`/`location` columns. |
 | `bookings` ↔ `quotations`      | One-to-one, at most one quotation per booking (`booking_id UNIQUE`). Added in `V3__quotations.sql` — this is the artifact a designer produces after a consultation: a priced, itemized scope the customer can accept or reject. |
 | `quotations` ↔ `quotation_line_items` | One-to-many. Each line item is one priced row (e.g. "Modular kitchen — ₹50,000"); `total_amount` on the quotation is the sum of all its line items' `amount`. |
+| `bookings` ↔ `reviews`         | One-to-one, at most one review per booking (`booking_id UNIQUE`). Added in `V5` — only creatable once a booking is `COMPLETED`. |
+| `users` ↔ `reviews`            | One-to-many, **twice** — once as `customer_id` (who wrote it), once as `designer_id` (who it's about) — same two-FKs-to-the-same-table pattern `bookings` already uses. |
 
 **Constraints worth noting:**
-- `role` and `status` columns use SQL `CHECK` constraints (`CHECK (role IN ('CUSTOMER', 'DESIGNER'))`)
-  as a database-level safety net, in addition to Java enum validation. `quotations.status`
-  does the same (`CHECK (status IN ('DRAFT', 'SENT', 'ACCEPTED', 'REJECTED'))`).
+- `role` and `status` columns use SQL `CHECK` constraints as a database-level safety net,
+  in addition to Java enum validation. `users.role` now allows `CUSTOMER`, `DESIGNER`,
+  or `ADMIN` (widened in `V4`); `bookings.status` now also allows `PENDING_ASSIGNMENT`
+  (also `V4`); `quotations.status` allows `DRAFT`/`SENT`/`ACCEPTED`/`REJECTED`;
+  `designer_profiles.availability_status` (new in `V5`) allows `AVAILABLE`/`UNAVAILABLE`;
+  `reviews.rating` (new in `V5`) is constrained to `BETWEEN 1 AND 5`.
 - Indexes exist on frequently-filtered columns: `designs.category_id`, `designs.designer_id`,
   `designs.style_tag`, `bookings.customer_id`, `bookings.designer_id`, `bookings.status`,
-  `quotation_line_items.quotation_id`.
+  `quotation_line_items.quotation_id`, `reviews.designer_id`.
   These make the catalog search and booking list queries fast as data grows.
+- **A migration mistake and its forward-only fix:** `V5` originally declared
+  `reviews.rating` as `SMALLINT`, but the `Review` entity's `Integer rating` field maps
+  to Postgres `INTEGER` by default — Hibernate's schema *validation* (never
+  auto-correction, see [Startup Flow](#3-application-startup-flow)) caught the mismatch
+  at boot with a clear error. Since `V5` was already applied to the database, the fix
+  is `V6__widen_review_rating_column.sql` (`ALTER COLUMN rating TYPE INTEGER`) — a small,
+  real example of why Flyway migrations are **never edited after they've run**: you
+  always write the next one forward instead, even to fix a mistake in the last one.
 
 ---
 
@@ -410,6 +457,19 @@ Key annotations explained:
   does when replacing a draft's items) deletes that row from the database — no manual
   `quotationLineItemRepository.delete(...)` call needed. This is why there's no separate
   repository for `QuotationLineItem` at all; it's managed entirely through its parent.
+- `Review.booking`, `Review.customer`, `Review.designer` — same shape as `Quotation.booking`
+  and `Booking`'s dual `User` relationships respectively: one `@OneToOne` back to the
+  booking it's about, and two `@ManyToOne` references to `User` (who wrote it, who it's
+  about), both explicitly named via `@JoinColumn` for the same reason `Booking` needs it.
+
+**A field that changed meaning, not just type:** `Booking.designer` was originally
+`@JoinColumn(nullable = false)` — every booking had to name a designer up front. Once
+the "let Velora assign one" path was added, this became `nullable = true` (matching the
+relaxed DB constraint from `V4`), and every place in the codebase that called
+`booking.getDesigner().getId()` unconditionally had to be found and null-guarded
+(`BookingMapper`, `BookingService`, `QuotationService`) — a good example of how a single
+entity-level relaxation ripples out to every consumer of that field, and why grepping
+for every call site before making a field nullable matters.
 
 ---
 
@@ -467,7 +527,7 @@ self-documenting — "token stuff" and "who this token belongs to" are visually 
 structurally separate — and gives room to add more account fields later without
 cluttering the top level. `UserSummary` is declared as a **nested record**, the same
 technique used for `ApiErrorResponse.FieldViolation` (see
-[Exception Handling Flow](#20-exception-handling-flow)) — a small DTO that only ever
+[Exception Handling Flow](#22-exception-handling-flow)) — a small DTO that only ever
 makes sense in the context of its parent.
 
 The `of(...)` static factory method is just a convenience constructor used by
@@ -494,6 +554,15 @@ public DesignResponse toResponse(Design design) {
 Note it calls `design.getDesigner().getFullName()` — this triggers the lazy load
 **while still inside the service's `@Transactional` method**, which is why it works
 safely here (see [Transactions](#14-full-request-lifecycle-controller--service--repository--db)).
+
+**Newer DTOs follow the same rules, nothing new to learn:** `DesignerMatchResponse`
+(one ranked candidate — see
+[Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching)),
+`DesignerPublicProfileResponse`, and `CreateReviewRequest`/`ReviewResponse` (see
+[Reviews & Ratings](#19-feature-walkthrough-reviews--ratings)) are all still plain
+records — flat data, validated with the same Bean Validation annotations, mapped by a
+small dedicated mapper (`DesignerMapper`, `ReviewMapper`). No new DTO pattern was
+introduced for any of this phase's features.
 
 ---
 
@@ -542,7 +611,7 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
 Since a quotation is one-to-one with its booking, every quotation lookup in
 `QuotationService` goes through the booking id rather than the quotation's own id — the
 booking id is the natural key a controller/client actually has on hand (see
-[Feature Walkthrough: Quotations](#17-feature-walkthrough-quotations-post-consultation-estimate)).
+[Feature Walkthrough: Quotations](#18-feature-walkthrough-quotations-post-consultation-estimate)).
 
 **Dynamic queries — `DesignSpecifications.java` + `JpaSpecificationExecutor`:**
 
@@ -581,6 +650,30 @@ designRepository.findAll(spec, pageable);
 This builds one SQL query with only the WHERE clauses that were actually requested —
 much cleaner than writing a dozen overloaded repository methods for every filter
 combination.
+
+**Counting instead of joining — the matching feature's repository additions:**
+
+```java
+long countByDesignerIdAndCategoryId(Long designerId, Long categoryId);
+long countByDesignerIdAndStyleTagIgnoreCase(Long designerId, String styleTag);
+long countByDesignerIdAndStatusIn(Long designerId, Collection<BookingStatus> statuses);
+```
+
+`DesignerMatchingService` (see
+[Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching))
+needs simple yes/no and how-many signals per candidate — "does this designer have any
+portfolio pieces in this category," "how many active bookings are they juggling right
+now" — and a `count` derived method expresses exactly that without pulling back full
+rows just to check `.size()` in Java.
+
+**Deliberately *not* using a `@Query` for rating averages:** `ReviewService` needs a
+designer's average rating. The tempting shortcut is a native aggregate query
+(`SELECT AVG(rating) ...`), but this codebase has zero `@Query`/native SQL anywhere —
+every repository here is derived-method or `Specification`-based. Introducing the
+*first* raw query for one feature would be a bigger stylistic inconsistency than the
+alternative: `ReviewRepository.findByDesignerId(designerId)` loads that designer's
+reviews (never a large list at this scale) and `ReviewService` averages them with a
+plain Java stream. Same repository style, everywhere, no exceptions.
 
 ---
 
@@ -635,10 +728,10 @@ token, since the token itself carries the identity + signature).
 
 1. **Controller** (`AuthController.register`) receives the JSON body, and Spring
    automatically deserializes it into a `RegisterRequest` record.
-   `@Valid` triggers Bean Validation on the fields (see [Validation](#19-validation-flow))
+   `@Valid` triggers Bean Validation on the fields (see [Validation](#21-validation-flow))
    *before* the method body even runs. If validation fails, the method is never called
    — Spring throws `MethodArgumentNotValidException` instead (caught globally, see
-   [Exception Handling](#20-exception-handling-flow)).
+   [Exception Handling](#22-exception-handling-flow)).
 
 2. **Controller delegates to `AuthService.register(request)`.** Controllers should
    never contain business logic — their only job is: deserialize input, call the
@@ -646,15 +739,24 @@ token, since the token itself carries the identity + signature).
 
 3. **`AuthService.register`:**
    ```java
+   if (request.role() == Role.ADMIN) {
+       throw new IllegalArgumentException("Cannot self-register as an admin account");
+   }
+
    String normalizedEmail = request.email().trim().toLowerCase();
 
    if (userRepository.existsByEmail(normalizedEmail)) {
        throw new DuplicateResourceException("An account with this email already exists");
    }
    ```
-   Email is normalized (trimmed + lowercased) so `Test@Example.com` and
-   `test@example.com` are treated as the same account. Duplicate check happens first —
-   throwing a custom exception that the global handler turns into `409 Conflict`.
+   The `ADMIN` check runs first, before anything else, and is unconditional — it
+   doesn't matter what else is in the request, an admin account can never come out of
+   this endpoint. This is the only reason an admin account exists at all today: one was
+   inserted directly by `V4__admin_and_designer_assignment.sql` as a bootstrap account,
+   since the API itself offers no other way to create one. Email is normalized (trimmed
+   + lowercased) so `Test@Example.com` and `test@example.com` are treated as the same
+   account. Duplicate check happens next — throwing a custom exception that the global
+   handler turns into `409 Conflict`.
 
 4. **Password hashing.**
    ```java
@@ -679,7 +781,7 @@ token, since the token itself carries the identity + signature).
    ```
    Customers never get a `DesignerProfile` row — this is why the `designerProfile`
    field in profile responses is `null`/absent for customers (see
-   [User Profile Walkthrough](#18-feature-walkthrough-user-profile-role-conditional-data)).
+   [User Profile Walkthrough](#20-feature-walkthrough-user-profile-role-conditional-data)).
 
 7. **Generate a JWT immediately** so the new user is logged in right after
    registering (no separate login step required):
@@ -902,6 +1004,18 @@ public ResponseEntity<BookingResponse> create(...) { ... }
 public ResponseEntity<BookingResponse> updateStatus(...) { ... }
 ```
 
+```java
+@PatchMapping("/{id}/assign")
+@PreAuthorize("hasRole('ADMIN')")
+public ResponseEntity<BookingResponse> assign(...) { ... }
+```
+
+The `ADMIN` role added in `V4` slots into this exact same mechanism — no new
+authorization concept, just a third string `@PreAuthorize` can check for. Since nothing
+in `RegisterRequest` can ever produce an `ADMIN` account (see
+[Authentication Flow — Register](#10-authentication-flow--register)), the one admin
+account in the system was seeded directly by a migration, not created through the API.
+
 `@EnableMethodSecurity` (in `SecurityConfig`) turns this annotation on globally.
 `hasRole('CUSTOMER')` actually checks for the authority `"ROLE_CUSTOMER"` — Spring
 Security's convention is to prefix role names with `ROLE_`, which is exactly what
@@ -1048,27 +1162,50 @@ browse, search, and filter interior designs.
 via `designService.getById(id)`, throwing `ResourceNotFoundException` → `404` if the
 id doesn't exist.
 
+**A related, equally public lookup — `GET /api/designers/{id}`:** the catalog tells you
+*what* a designer has made; this new, small `DesignerController`/`DesignerService` pair
+tells you *who* they are — bio, years of experience, specialization, city, current
+availability, and their aggregate rating (see
+[Reviews & Ratings](#19-feature-walkthrough-reviews--ratings) for where that number
+comes from). `DesignerService.getPublicProfile`:
+
+```java
+User user = userRepository.findById(designerId)
+        .filter(u -> u.getRole() == Role.DESIGNER)
+        .orElseThrow(() -> new ResourceNotFoundException("Designer not found: " + designerId));
+```
+
+The `.filter(...)` is doing double duty: a wrong id and a *right* id that just isn't a
+designer both end up `404 Not Found` — from the outside, "no such public designer
+profile" is the correct, single response either way; the caller doesn't need to know
+*why* it doesn't exist. This is deliberately just a single-profile lookup by id, not a
+searchable directory of every designer — that's a natural next feature, but isn't built
+yet. `"/api/designers/**"` was added to `SecurityConfig.PUBLIC_GET_ENDPOINTS` alongside
+`/api/designs/**` and `/api/categories/**` — same public-browsing intent.
+
 ---
 
 ## 16. Feature Walkthrough: Bookings (State Machine)
 
-**Purpose:** Let a customer book a consultation with a designer (optionally tied to a
-specific design), and let both sides manage the booking's lifecycle.
+**Purpose:** Let a customer book a consultation — either with a specific designer they
+picked themselves, or with no designer at all if they'd rather Velora assign one — and
+let both sides (plus, for the assignment path, an admin) manage the booking's lifecycle.
 
-**Booking states:** `PENDING → CONFIRMED → COMPLETED`, with `CANCELLED` reachable from
-either `PENDING` or `CONFIRMED`. Once `CANCELLED` or `COMPLETED`, a booking is frozen
-— no further transitions allowed.
+**Booking states:** `PENDING_ASSIGNMENT → PENDING → CONFIRMED → COMPLETED`, with
+`CANCELLED` reachable from `PENDING_ASSIGNMENT`, `PENDING`, or `CONFIRMED`. Once
+`CANCELLED` or `COMPLETED`, a booking is frozen — no further transitions allowed.
+`PENDING_ASSIGNMENT` only exists for the "let Velora choose" path — a directly-booked
+designer skips it entirely and starts straight at `PENDING`.
 
 ```
-        ┌─────────┐   designer confirms    ┌───────────┐   designer marks done   ┌───────────┐
-        │ PENDING │────────────────────────►│ CONFIRMED │────────────────────────►│ COMPLETED │
-        └────┬────┘                        └─────┬─────┘                        └───────────┘
-             │  customer cancels                  │  customer cancels
-             │  (or designer rejects)              │
-             ▼                                    ▼
-        ┌───────────┐                        ┌───────────┐
-        │ CANCELLED │◄───────────────────────┤ CANCELLED │   (same terminal state)
-        └───────────┘                        └───────────┘
+        ┌────────────────────┐  admin assigns    ┌─────────┐  designer confirms   ┌───────────┐  designer marks done  ┌───────────┐
+        │ PENDING_ASSIGNMENT │──────────────────►│ PENDING │─────────────────────►│ CONFIRMED │──────────────────────►│ COMPLETED │
+        └──────────┬─────────┘                   └────┬────┘                     └─────┬─────┘                     └───────────┘
+                   │  customer cancels                 │  customer cancels               │  customer cancels
+                   ▼                                    ▼                                 ▼
+             ┌───────────┐                        ┌───────────┐                     ┌───────────┐
+             │ CANCELLED │                        │ CANCELLED │                     │ CANCELLED │   (same terminal state, all three arrows)
+             └───────────┘                        └───────────┘                     └───────────┘
 ```
 
 **Creating a booking** — `POST /api/bookings`, restricted to `@PreAuthorize("hasRole('CUSTOMER')")`:
@@ -1076,24 +1213,36 @@ either `PENDING` or `CONFIRMED`. Once `CANCELLED` or `COMPLETED`, a booking is f
 ```java
 public BookingResponse createBooking(Long customerId, BookingRequest request) {
     User customer = userRepository.findById(customerId)...
-    User designer = userRepository.findById(request.designerId())...
 
-    if (designer.getRole() != Role.DESIGNER) {
-        throw new IllegalArgumentException("Selected user is not a designer");
+    if (request.designId() != null && request.designerId() == null) {
+        throw new IllegalArgumentException("designId requires an explicit designerId");
     }
 
+    User designer = null;
     Design design = null;
-    if (request.designId() != null) {
-        design = designRepository.findById(request.designId())...
-        if (!design.getDesigner().getId().equals(designer.getId())) {
-            throw new IllegalArgumentException("The selected design does not belong to the selected designer");
+
+    if (request.designerId() != null) {
+        designer = userRepository.findById(request.designerId())...
+        if (designer.getRole() != Role.DESIGNER) {
+            throw new IllegalArgumentException("Selected user is not a designer");
+        }
+        if (request.designId() != null) {
+            design = designRepository.findById(request.designId())...
+            if (!design.getDesigner().getId().equals(designer.getId())) {
+                throw new IllegalArgumentException("The selected design does not belong to the selected designer");
+            }
         }
     }
 
+    Category category = request.categoryId() != null
+            ? categoryRepository.findById(request.categoryId())... : null;
+
     Booking booking = Booking.builder()
             .customer(customer).designer(designer).design(design)
+            .category(category).preferredStyle(request.preferredStyle())
+            .budget(request.budget()).location(request.location())
             .scheduledAt(request.scheduledAt())
-            .status(BookingStatus.PENDING)   // always starts PENDING
+            .status(designer != null ? BookingStatus.PENDING : BookingStatus.PENDING_ASSIGNMENT)
             .notes(request.notes())
             .build();
 
@@ -1103,8 +1252,15 @@ public BookingResponse createBooking(Long customerId, BookingRequest request) {
 
 Notice the extra business-rule validation that can't be expressed via `@Valid`
 annotations alone (they require cross-referencing the database): confirming the
-target user is actually a designer, and if a specific design was chosen, confirming
-it actually belongs to that designer.
+target user is actually a designer, confirming a chosen design actually belongs to
+that designer, and rejecting a design reference with no designer named alongside it
+(pointing at one specific designer's portfolio piece while asking to be matched with
+someone else entirely doesn't make sense). Everything under `designerId != null` is
+the direct-pick path, unchanged from before this phase; `category`/`preferredStyle`/
+`budget`/`location` are new, optional fields that only matter on the assignment path —
+they're exactly the signals `DesignerMatchingService` scores candidates against (see
+[Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching)),
+and are simply unused dead weight on a direct booking.
 
 **The state machine itself** — `validateTransition`:
 
@@ -1113,7 +1269,7 @@ private void validateTransition(BookingStatus current, BookingStatus next) {
     boolean allowed = switch (current) {
         case PENDING -> next == BookingStatus.CONFIRMED || next == BookingStatus.CANCELLED;
         case CONFIRMED -> next == BookingStatus.COMPLETED || next == BookingStatus.CANCELLED;
-        case CANCELLED, COMPLETED -> false;   // terminal states, no transitions out
+        case PENDING_ASSIGNMENT, CANCELLED, COMPLETED -> false;   // terminal, or must be assigned first
     };
 
     if (!allowed) {
@@ -1124,8 +1280,14 @@ private void validateTransition(BookingStatus current, BookingStatus next) {
 
 This uses a Java **switch expression** (not statement) — each `case` *returns* a
 value directly, and the compiler enforces all enum cases are handled (exhaustiveness
-checking), so if `BookingStatus` ever gets a new value, this code won't compile until
-someone updates the switch. `InvalidStateTransitionException` → mapped to `409
+checking), so when `PENDING_ASSIGNMENT` was added as a new `BookingStatus` value, this
+switch **stopped compiling** until it was given its own arm — a concrete example of
+that exhaustiveness guarantee catching an incomplete change at compile time, before it
+ever became a runtime bug. `PENDING_ASSIGNMENT` maps to `false` for every `next`: a
+designer can't be the one to call this method on a booking they're not assigned to in
+the first place, so there's genuinely no valid transition to allow from here — moving
+out of `PENDING_ASSIGNMENT` only ever happens via `assignDesigner` (see next section),
+never through this method. `InvalidStateTransitionException` → mapped to `409
 Conflict` by the global handler.
 
 **Who can do what:**
@@ -1134,13 +1296,99 @@ Conflict` by the global handler.
 |---|---|---|---|
 | Create booking | `POST /api/bookings` | CUSTOMER | — |
 | List my bookings | `GET /api/bookings` | any authenticated | filtered by `principal.getId()` — customers see bookings where they're the customer, designers see ones where they're the designer (`BookingService.getBookingsForUser` branches on `role`) |
-| Get one booking | `GET /api/bookings/{id}` | any authenticated | must be the customer *or* the designer on that booking (`assertParticipant`) |
-| Cancel | `PATCH /api/bookings/{id}/cancel` | CUSTOMER | must be *the* customer on that booking, and it must still be cancellable |
-| Update status | `PATCH /api/bookings/{id}/status` | DESIGNER | must be *the* designer on that booking, and the transition must be valid |
+| Get one booking | `GET /api/bookings/{id}` | any authenticated | must be the customer *or* the assigned designer, if any (`assertParticipant`, null-safe since `designer` can be absent) |
+| Cancel | `PATCH /api/bookings/{id}/cancel` | CUSTOMER | must be *the* customer on that booking, and it must still be cancellable (includes `PENDING_ASSIGNMENT`) |
+| Update status | `PATCH /api/bookings/{id}/status` | DESIGNER | must be *the* assigned designer (booking must have one), and the transition must be valid |
+| Assign a designer | `PATCH /api/bookings/{id}/assign` | ADMIN | booking must be `PENDING_ASSIGNMENT` with no designer yet — see [Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching) |
 
 ---
 
-## 17. Feature Walkthrough: Quotations (Post-Consultation Estimate)
+## 17. Feature Walkthrough: Designer Assignment & Matching
+
+**Purpose:** A booking with no `designerId` sits in `PENDING_ASSIGNMENT` with nobody
+attached to act on it. This is the feature that fills that gap — an admin asks the
+system to rank candidate designers for one specific booking, picks one, and the
+booking rejoins the ordinary lifecycle exactly as if that designer had been booked
+directly. It's a **ranked recommendation, not a silent auto-assign** — the admin still
+makes the final call, deliberately, so a bad or unavailable match never gets committed
+without a human confirming it.
+
+**Endpoint:** `GET /api/bookings/{id}/recommendations`, `@PreAuthorize("hasRole('ADMIN')")`.
+
+**`DesignerMatchingService.recommend`:**
+
+```java
+Booking booking = bookingRepository.findById(bookingId)...
+
+if (booking.getStatus() != BookingStatus.PENDING_ASSIGNMENT) {
+    throw new InvalidStateTransitionException("This booking is not awaiting designer assignment");
+}
+
+List<DesignerProfile> candidates = designerProfileRepository.findByAvailabilityStatus(AvailabilityStatus.AVAILABLE);
+
+return candidates.stream()
+        .map(profile -> score(profile, booking))
+        .sorted(Comparator.comparingInt(DesignerMatchResponse::score).reversed()
+                .thenComparingLong(match -> activeBookingCount(match.designerId())))
+        .limit(MAX_RESULTS)
+        .toList();
+```
+
+Two things worth noting before the scoring itself:
+1. **Unavailable designers are excluded before any scoring happens**, not scored low —
+   `designerProfileRepository.findByAvailabilityStatus(AVAILABLE)` is the very first
+   thing that runs. A designer who's toggled themselves off (see
+   [Profile Flow](#20-feature-walkthrough-user-profile-role-conditional-data)) never
+   even enters the candidate pool.
+2. **`Comparator.thenComparingLong` only runs its second key extractor on a tie** in
+   the first key — this is a genuine Java behavior, not a Velora-specific choice, and
+   it's exactly why the tie-break (fewer active bookings wins) only ever calls
+   `activeBookingCount` when two candidates land on the exact same score.
+
+**The scoring formula** — deterministic, transparent, out of 100 points, no ML:
+
+| Factor | Points | What it checks |
+|---|---|---|
+| Specialization / category match | 30 | Does `DesignerProfile.specialization` mention the booking's category name or preferred style (case-insensitive)? |
+| Portfolio evidence | 20 | Does this designer's own catalog (`Design` rows) actually contain work in that category (+10) and/or style (+10)? |
+| Experience | 15 | `min(yearsExperience, 10) / 10.0 * 15` — more experience helps, but caps out rather than letting a 30-year veteran dominate every score. |
+| Location | 15 | Does `DesignerProfile.city` match the booking's `location`? |
+| Rating | 15 | `(averageRating ?? 3.0) / 5.0 * 15` — a designer with zero reviews yet gets the neutral midpoint, not a zero. A brand-new designer being permanently unmatchable would be a bad incentive structure. |
+| Budget fit | 5 | Is the booking's `budget` at least 70% of this designer's own average `Design.priceEstimate`? A light-touch affordability signal from their existing portfolio pricing, since no real quote exists at this stage yet. |
+
+Every factor is a plain `if`/arithmetic check in Java — no external scoring library, no
+weights file, no trained model. Anyone reading `DesignerMatchingService` can see
+exactly why a candidate got the score they did, which matters for a feature admins are
+expected to trust and act on.
+
+**Assigning the pick** reuses the endpoint that already existed for manual assignment
+(unchanged by this feature at all):
+
+```java
+public BookingResponse assignDesigner(Long bookingId, Long designerId) {
+    Booking booking = findBooking(bookingId);
+    if (booking.getDesigner() != null || booking.getStatus() != BookingStatus.PENDING_ASSIGNMENT) {
+        throw new InvalidStateTransitionException("This booking is not awaiting designer assignment");
+    }
+    User designer = userRepository.findById(designerId)...
+    if (designer.getRole() != Role.DESIGNER) {
+        throw new IllegalArgumentException("Selected user is not a designer");
+    }
+    booking.setDesigner(designer);
+    booking.setStatus(BookingStatus.PENDING);
+    return bookingMapper.toResponse(bookingRepository.save(booking));
+}
+```
+
+This is deliberate: `/recommendations` only ever *reads* and scores, never writes
+anything. The admin's actual decision is committed through the exact same `/assign`
+call an admin would use to hand-pick any designer with no ranking involved at all —
+the ranking is purely an aid layered on top of an already-existing capability, not a
+new write path with its own rules.
+
+---
+
+## 18. Feature Walkthrough: Quotations (Post-Consultation Estimate)
 
 **Purpose:** A `Booking` only gets a designer and customer talking — it carries no
 price. A **quotation** is the artifact that turns that consultation into a concrete,
@@ -1224,7 +1472,7 @@ quotation.setStatus(QuotationStatus.SENT);
 ```
 
 The empty-line-items check is a good example of a rule that can't live in Bean
-Validation on the DTO (see [Validation Flow](#19-validation-flow)) — `SaveQuotationRequest`
+Validation on the DTO (see [Validation Flow](#21-validation-flow)) — `SaveQuotationRequest`
 deliberately allows an empty `lineItems` list so a designer can save an in-progress
 draft with nothing in it yet, but *sending* an empty quotation to a customer would be
 meaningless, so that check only fires here, at the point where it actually matters.
@@ -1251,12 +1499,98 @@ reuses `ResourceNotFoundException` (404 — booking or quotation doesn't exist),
 `UnauthorizedActionException` (403 — wrong participant), `InvalidStateTransitionException`
 (409 — illegal status move), and plain `IllegalArgumentException` (400 — empty line
 items on send), exactly the same set `BookingService` already relies on (see
-[Exception Handling Flow](#20-exception-handling-flow)). New features in this codebase
+[Exception Handling Flow](#22-exception-handling-flow)). New features in this codebase
 default to reusing the existing exception vocabulary rather than inventing new ones.
 
 ---
 
-## 18. Feature Walkthrough: User Profile (Role-Conditional Data)
+## 19. Feature Walkthrough: Reviews & Ratings
+
+**Purpose:** Once a booking is genuinely finished, the customer can leave a rating and
+comment on the designer they worked with. This closes a loop the rest of the system
+depends on: [Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching)
+scores candidates partly on their aggregate rating — without this feature, that score
+would be permanently meaningless (every designer stuck at the same neutral default
+forever).
+
+**Data shape:** one `Review` per `Booking` (`booking_id UNIQUE`, same one-per-booking
+pattern `Quotation` already uses), holding `rating` (1-5, enforced by a DB `CHECK` as
+well as `@Min`/`@Max` on the request DTO) and an optional `comment`. The designer's
+`averageRating`/`ratingCount` on `DesignerProfile` are a **denormalized, recomputed
+cache** — never trusted as a running tally, always fully recalculated from every review
+that designer has, each time a new one is added.
+
+**`ReviewService.createReview`:**
+
+```java
+Booking booking = bookingRepository.findById(bookingId)...
+
+if (!booking.getCustomer().getId().equals(customerId)) {
+    throw new UnauthorizedActionException("Only the customer on this booking can leave a review");
+}
+if (booking.getStatus() != BookingStatus.COMPLETED) {
+    throw new InvalidStateTransitionException("Can only review a completed booking");
+}
+if (reviewRepository.existsByBookingId(bookingId)) {
+    throw new DuplicateResourceException("This booking has already been reviewed");
+}
+
+Review review = Review.builder()
+        .booking(booking).customer(booking.getCustomer()).designer(booking.getDesigner())
+        .rating(request.rating()).comment(request.comment())
+        .build();
+review = reviewRepository.save(review);
+
+recomputeDesignerRating(booking.getDesigner().getId());
+```
+
+Three checks, in order, each mapping to a distinct, correct HTTP status: wrong customer
+→ 403, wrong booking stage → 409, already reviewed → 409 (as a `DuplicateResourceException`,
+same one `AuthService.register` uses for a duplicate email — a review and an email
+account are very different things, but "this unique thing already exists" is exactly
+the same shape of problem either time).
+
+**Recomputing the aggregate — deliberately not an incremental running average:**
+
+```java
+private void recomputeDesignerRating(Long designerId) {
+    List<Review> reviews = reviewRepository.findByDesignerId(designerId);
+
+    DesignerProfile profile = designerProfileRepository.findByUserId(designerId)...
+
+    BigDecimal average = reviews.stream()
+            .map(r -> BigDecimal.valueOf(r.getRating()))
+            .reduce(BigDecimal.ZERO, BigDecimal::add)
+            .divide(new BigDecimal(reviews.size()), 2, RoundingMode.HALF_UP);
+
+    profile.setAverageRating(average);
+    profile.setRatingCount(reviews.size());
+    designerProfileRepository.save(profile);
+}
+```
+
+It would be cheaper to just do `(oldAverage * oldCount + newRating) / (oldCount + 1)`
+and skip reloading every review — but that incremental approach silently accumulates
+floating-point/rounding drift over many reviews, and gives no easy way to recover the
+"true" number if something ever went wrong with one update. Reloading every review and
+recalculating from scratch is more database work per review, but it's always
+*correct*, and at the number of reviews a single designer realistically accumulates,
+that cost is negligible. Correctness over micro-optimization, same instinct as
+choosing Java-side averaging over a database `@Query` (see
+[Repositories](#8-repositories-data-access-layer)).
+
+**Endpoint and access:** `POST /api/bookings/{bookingId}/review`,
+`@PreAuthorize("hasRole('CUSTOMER')")`, mirroring `QuotationController`'s
+nested-under-the-booking URL style. Nothing new in `GlobalExceptionHandler` — every
+exception this feature throws is one that already existed for `Booking`/`Quotation`.
+Individual review comments aren't exposed through any endpoint yet — only the
+recomputed aggregate, via `DesignerProfileResponse`/`DesignerPublicProfileResponse` —
+since the rows are already stored with everything needed, adding a reviews-list
+endpoint later doesn't require touching this write path at all.
+
+---
+
+## 20. Feature Walkthrough: User Profile (Role-Conditional Data)
 
 **Purpose:** Every user (customer or designer) can view/update their own profile via
 one shared endpoint pair — `GET /api/users/profile` and `PUT /api/users/profile` —
@@ -1299,9 +1633,27 @@ needing two parallel DTOs.
 public record UpdateProfileRequest(
         @Size(max = 150) String fullName, @Size(max = 20) String phone,
         @Size(max = 2000) String bio, @Min(0) @Max(80) Integer yearsExperience,
-        @Size(max = 150) String specialization, @Size(max = 100) String city
+        @Size(max = 150) String specialization, @Size(max = 100) String city,
+        AvailabilityStatus availabilityStatus
 ) {}
 ```
+
+`availabilityStatus` slotted into this same partial-update pattern with no special
+handling — it's just one more designer-only field, applied the same way `bio`/
+`specialization`/etc. already are: only if non-null, only if the account is actually a
+`DESIGNER`. This is the *entire* implementation of "availability" in this system today
+— a self-managed on/off flag a designer flips whenever they choose, not a real
+calendar with time slots. [Designer Assignment & Matching](#17-feature-walkthrough-designer-assignment--matching)
+is the only thing that reads it, and it does so with a simple equality filter
+(`findByAvailabilityStatus(AVAILABLE)`), not anything scheduling-aware.
+
+Notice what's deliberately **absent** from `UpdateProfileRequest`: `averageRating` and
+`ratingCount`. Those two fields appear on `DesignerProfileResponse` (read side) but
+have no corresponding settable field anywhere — the only code path that ever writes
+them is `ReviewService.recomputeDesignerRating` (see
+[Reviews & Ratings](#19-feature-walkthrough-reviews--ratings)). A designer can change
+their own bio; they cannot touch their own rating, by construction, not just by
+convention — there's simply no field in the request DTO for it to arrive through.
 
 Every field is optional (no `@NotBlank`/`@NotNull`) — the client only sends the fields
 it wants to change. `UserService.updateProfile` checks each one individually
@@ -1324,7 +1676,7 @@ simply never read, because the whole designer-fields block is skipped for their 
 
 ---
 
-## 19. Validation Flow
+## 21. Validation Flow
 
 **What:** Jakarta Bean Validation (the `@NotBlank`, `@Email`, `@Size`, `@Pattern`,
 `@Min`, `@Max`, `@Future`, `@NotNull` annotations you see on DTO fields) is a
@@ -1373,7 +1725,7 @@ for how those become HTTP responses too.
 
 ---
 
-## 20. Exception Handling Flow
+## 22. Exception Handling Flow
 
 **What:** `GlobalExceptionHandler`, annotated `@RestControllerAdvice`, is a single
 class that intercepts exceptions thrown **anywhere** in any controller/service call
@@ -1404,9 +1756,9 @@ the Jackson config, omitted from the JSON entirely).
 | Exception thrown | HTTP status | When it happens |
 |---|---|---|
 | `ResourceNotFoundException` | 404 Not Found | Looking up a user/design/booking by id that doesn't exist |
-| `DuplicateResourceException` | 409 Conflict | Registering with an email that's already taken |
-| `UnauthorizedActionException` | 403 Forbidden | Acting on a resource you don't own (e.g. cancelling someone else's booking) |
-| `InvalidStateTransitionException` | 409 Conflict | Illegal booking status change (e.g. CONFIRMED → PENDING) |
+| `DuplicateResourceException` | 409 Conflict | Registering with an email that's already taken, or leaving a second review on the same booking |
+| `UnauthorizedActionException` | 403 Forbidden | Acting on a resource you don't own (e.g. cancelling someone else's booking, reviewing a booking that isn't yours) |
+| `InvalidStateTransitionException` | 409 Conflict | Illegal booking status change (e.g. CONFIRMED → PENDING), assigning a designer to a booking that isn't `PENDING_ASSIGNMENT`, requesting recommendations for a booking that isn't awaiting assignment, or reviewing a booking that isn't `COMPLETED` |
 | `BadCredentialsException` (Spring Security) | 401 Unauthorized | Wrong email/password at login |
 | `AccessDeniedException` (Spring Security) | 403 Forbidden | `@PreAuthorize` role check failed |
 | `DataIntegrityViolationException` (Spring/JPA) | 409 Conflict | A DB constraint was violated (e.g. race-condition duplicate) |
@@ -1459,7 +1811,7 @@ no visible difference in error format regardless of which layer caught the probl
 
 ---
 
-## 21. API Documentation (Swagger/OpenAPI)
+## 23. API Documentation (Swagger/OpenAPI)
 
 **What:** `springdoc-openapi-starter-webmvc-ui` automatically scans all
 `@RestController` classes/methods and generates a live, interactive API
@@ -1500,7 +1852,7 @@ Both `/swagger-ui/**` and `/v3/api-docs/**` are listed in `SecurityConfig`'s
 
 ---
 
-## 22. Environment & Secrets Management
+## 24. Environment & Secrets Management
 
 **Why environment variables instead of hardcoded config:** Database credentials, JWT
 signing secrets, and CORS origins differ between local development, staging, and
@@ -1546,34 +1898,38 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 
 ---
 
-## 23. Quick Reference: All Endpoints
+## 25. Quick Reference: All Endpoints
 
 | Method | Path | Auth required | Role restriction | Purpose |
 |---|---|---|---|---|
-| POST | `/api/auth/register` | No | — | Create a new account (customer or designer), returns a JWT |
+| POST | `/api/auth/register` | No | — | Create a new account (customer or designer — never admin), returns a JWT |
 | POST | `/api/auth/login` | No | — | Authenticate with email/password, returns a JWT |
-| GET | `/api/users/profile` | Yes | — | Get the current user's own profile |
-| PUT | `/api/users/profile` | Yes | — | Update the current user's own profile (partial update) |
+| GET | `/api/users/profile` | Yes | — | Get the current user's own profile (includes availability/rating for designers) |
+| PUT | `/api/users/profile` | Yes | — | Update the current user's own profile, incl. availability toggle (partial update) |
 | GET | `/api/designs` | No | — | Search/browse the design catalog (paginated, filterable) |
 | GET | `/api/designs/{id}` | No | — | Get one design's full details |
 | GET | `/api/categories` | No | — | List all design categories |
-| POST | `/api/bookings` | Yes | CUSTOMER | Book a consultation with a designer |
+| GET | `/api/designers/{id}` | No | — | Get one designer's public profile (bio, experience, availability, rating) |
+| POST | `/api/bookings` | Yes | CUSTOMER | Book a consultation — with a chosen designer, or none (assignment-requested) |
 | GET | `/api/bookings` | Yes | — | List the current user's bookings (customer or designer view) |
 | GET | `/api/bookings/{id}` | Yes | — | Get one booking's details (must be a participant) |
-| PATCH | `/api/bookings/{id}/cancel` | Yes | CUSTOMER | Cancel your own booking (only if PENDING/CONFIRMED) |
+| PATCH | `/api/bookings/{id}/cancel` | Yes | CUSTOMER | Cancel your own booking (PENDING_ASSIGNMENT/PENDING/CONFIRMED) |
 | PATCH | `/api/bookings/{id}/status` | Yes | DESIGNER | Advance a booking's status (only if you're the assigned designer) |
+| GET | `/api/bookings/{id}/recommendations` | Yes | ADMIN | Rank candidate designers for a booking awaiting assignment |
+| PATCH | `/api/bookings/{id}/assign` | Yes | ADMIN | Assign a designer to a booking awaiting assignment |
 | PUT | `/api/bookings/{bookingId}/quotation` | Yes | DESIGNER | Create or replace a draft quotation for a booking (assigned designer only) |
 | POST | `/api/bookings/{bookingId}/quotation/send` | Yes | DESIGNER | Send a draft quotation to the customer |
 | GET | `/api/bookings/{bookingId}/quotation` | Yes | — | Get the quotation for a booking (must be a participant) |
 | PATCH | `/api/bookings/{bookingId}/quotation/accept` | Yes | CUSTOMER | Accept a sent quotation |
 | PATCH | `/api/bookings/{bookingId}/quotation/reject` | Yes | CUSTOMER | Reject a sent quotation |
+| POST | `/api/bookings/{bookingId}/review` | Yes | CUSTOMER | Leave a 1-5 rating + comment for a completed booking (once only) |
 | GET | `/actuator/health` | No | — | Health check (used to confirm the app is up) |
 | GET | `/swagger-ui/index.html` | No | — | Interactive API documentation |
 | GET | `/v3/api-docs` | No | — | Raw OpenAPI JSON spec |
 
 ---
 
-*This document reflects the implementation as of the MVP 1 milestone. As new features
-are added (design uploads, reviews, payments, etc.), extend this file section by
-section rather than starting a new one, so it stays the single source of truth for
-onboarding and self-review.*
+*This document reflects the implementation through the designer-matching/ratings phase.
+As new features are added (project execution, milestones, payments, etc.), extend this
+file section by section rather than starting a new one, so it stays the single source
+of truth for onboarding and self-review.*

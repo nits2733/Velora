@@ -4,6 +4,7 @@ import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.entity.Booking;
 import com.velora.backend.entity.BookingStatus;
+import com.velora.backend.entity.Category;
 import com.velora.backend.entity.Design;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
@@ -12,6 +13,7 @@ import com.velora.backend.exception.ResourceNotFoundException;
 import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.BookingMapper;
 import com.velora.backend.repository.BookingRepository;
+import com.velora.backend.repository.CategoryRepository;
 import com.velora.backend.repository.DesignRepository;
 import com.velora.backend.repository.UserRepository;
 import com.velora.backend.util.PageResponse;
@@ -27,11 +29,13 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class BookingService {
 
-    private static final Set<BookingStatus> CANCELLABLE_STATUSES = Set.of(BookingStatus.PENDING, BookingStatus.CONFIRMED);
+    private static final Set<BookingStatus> CANCELLABLE_STATUSES =
+            Set.of(BookingStatus.PENDING_ASSIGNMENT, BookingStatus.PENDING, BookingStatus.CONFIRMED);
 
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
     private final DesignRepository designRepository;
+    private final CategoryRepository categoryRepository;
     private final BookingMapper bookingMapper;
 
     @Transactional
@@ -39,32 +43,70 @@ public class BookingService {
         User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + customerId));
 
-        User designer = userRepository.findById(request.designerId())
-                .orElseThrow(() -> new ResourceNotFoundException("Designer not found: " + request.designerId()));
-
-        if (designer.getRole() != Role.DESIGNER) {
-            throw new IllegalArgumentException("Selected user is not a designer");
+        if (request.designId() != null && request.designerId() == null) {
+            throw new IllegalArgumentException("designId requires an explicit designerId");
         }
 
+        User designer = null;
         Design design = null;
-        if (request.designId() != null) {
-            design = designRepository.findById(request.designId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Design not found: " + request.designId()));
 
-            if (!design.getDesigner().getId().equals(designer.getId())) {
-                throw new IllegalArgumentException("The selected design does not belong to the selected designer");
+        if (request.designerId() != null) {
+            designer = userRepository.findById(request.designerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Designer not found: " + request.designerId()));
+
+            if (designer.getRole() != Role.DESIGNER) {
+                throw new IllegalArgumentException("Selected user is not a designer");
             }
+
+            if (request.designId() != null) {
+                design = designRepository.findById(request.designId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Design not found: " + request.designId()));
+
+                if (!design.getDesigner().getId().equals(designer.getId())) {
+                    throw new IllegalArgumentException("The selected design does not belong to the selected designer");
+                }
+            }
+        }
+
+        Category category = null;
+        if (request.categoryId() != null) {
+            category = categoryRepository.findById(request.categoryId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + request.categoryId()));
         }
 
         Booking booking = Booking.builder()
                 .customer(customer)
                 .designer(designer)
                 .design(design)
+                .category(category)
+                .preferredStyle(request.preferredStyle())
+                .budget(request.budget())
+                .location(request.location())
                 .scheduledAt(request.scheduledAt())
-                .status(BookingStatus.PENDING)
+                .status(designer != null ? BookingStatus.PENDING : BookingStatus.PENDING_ASSIGNMENT)
                 .notes(request.notes())
                 .build();
 
+        return bookingMapper.toResponse(bookingRepository.save(booking));
+    }
+
+    @Transactional
+    public BookingResponse assignDesigner(Long bookingId, Long designerId) {
+        Booking booking = findBooking(bookingId);
+
+        if (booking.getDesigner() != null || booking.getStatus() != BookingStatus.PENDING_ASSIGNMENT) {
+            throw new InvalidStateTransitionException("This booking is not awaiting designer assignment");
+        }
+
+        User designer = userRepository.findById(designerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Designer not found: " + designerId));
+
+        if (designer.getRole() != Role.DESIGNER) {
+            throw new IllegalArgumentException("Selected user is not a designer");
+        }
+
+        booking.setDesigner(designer);
+        booking.setStatus(BookingStatus.PENDING);
         return bookingMapper.toResponse(bookingRepository.save(booking));
     }
 
@@ -105,7 +147,7 @@ public class BookingService {
     public BookingResponse updateStatus(Long designerId, Long bookingId, BookingStatus newStatus) {
         Booking booking = findBooking(bookingId);
 
-        if (!booking.getDesigner().getId().equals(designerId)) {
+        if (booking.getDesigner() == null || !booking.getDesigner().getId().equals(designerId)) {
             throw new UnauthorizedActionException("Only the assigned designer can update this booking's status");
         }
 
@@ -119,7 +161,7 @@ public class BookingService {
         boolean allowed = switch (current) {
             case PENDING -> next == BookingStatus.CONFIRMED || next == BookingStatus.CANCELLED;
             case CONFIRMED -> next == BookingStatus.COMPLETED || next == BookingStatus.CANCELLED;
-            case CANCELLED, COMPLETED -> false;
+            case PENDING_ASSIGNMENT, CANCELLED, COMPLETED -> false;
         };
 
         if (!allowed) {
@@ -130,7 +172,7 @@ public class BookingService {
 
     private void assertParticipant(Long userId, Booking booking) {
         boolean isParticipant = booking.getCustomer().getId().equals(userId)
-                || booking.getDesigner().getId().equals(userId);
+                || (booking.getDesigner() != null && booking.getDesigner().getId().equals(userId));
         if (!isParticipant) {
             throw new UnauthorizedActionException("You do not have access to this booking");
         }

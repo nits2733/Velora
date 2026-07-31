@@ -120,6 +120,9 @@ public class QuotationService {
     }
 
     private void assertIsAssignedDesigner(Long designerId, Booking booking) {
+        if (booking.getDesigner() == null) {
+            throw new UnauthorizedActionException("This booking has no assigned designer yet");
+        }
         if (!booking.getDesigner().getId().equals(designerId)) {
             throw new UnauthorizedActionException("Only the designer assigned to this booking can manage its quotation");
         }
@@ -127,7 +130,7 @@ public class QuotationService {
 
     private void assertParticipant(Long userId, Booking booking) {
         boolean isParticipant = booking.getCustomer().getId().equals(userId)
-                || booking.getDesigner().getId().equals(userId);
+                || (booking.getDesigner() != null && booking.getDesigner().getId().equals(userId));
         if (!isParticipant) {
             throw new UnauthorizedActionException("You do not have access to this quotation");
         }

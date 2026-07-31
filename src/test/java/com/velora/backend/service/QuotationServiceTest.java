@@ -176,6 +176,19 @@ class QuotationServiceTest {
     }
 
     @Test
+    void saveDraftRejectsBookingWithNoAssignedDesigner() {
+        Booking unassigned = Booking.builder()
+                .id(20L).customer(customer).designer(null)
+                .status(BookingStatus.PENDING_ASSIGNMENT).scheduledAt(Instant.now()).build();
+        when(bookingRepository.findById(20L)).thenReturn(Optional.of(unassigned));
+
+        SaveQuotationRequest request = new SaveQuotationRequest(null, List.of());
+
+        assertThatThrownBy(() -> quotationService.saveDraft(2L, 20L, request))
+                .isInstanceOf(UnauthorizedActionException.class);
+    }
+
+    @Test
     void getThrowsNotFoundWhenNoQuotationExistsForBooking() {
         when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.empty());
 

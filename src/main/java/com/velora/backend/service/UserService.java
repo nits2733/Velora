@@ -59,6 +59,9 @@ public class UserService {
             if (request.city() != null) {
                 designerProfile.setCity(request.city());
             }
+            if (request.availabilityStatus() != null) {
+                designerProfile.setAvailabilityStatus(request.availabilityStatus());
+            }
             designerProfile = designerProfileRepository.save(designerProfile);
         }
 

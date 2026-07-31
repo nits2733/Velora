@@ -1,10 +1,12 @@
-package com.velora.backend.dto.user;
+package com.velora.backend.dto.designer;
 
 import com.velora.backend.entity.AvailabilityStatus;
 
 import java.math.BigDecimal;
 
-public record DesignerProfileResponse(
+public record DesignerPublicProfileResponse(
+        Long id,
+        String fullName,
         String bio,
         Integer yearsExperience,
         String specialization,

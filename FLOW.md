@@ -66,20 +66,30 @@ Application ready to accept requests
 
 ## 2. Registration Flow
 
-1. A new user submits their email, a password, their full name, an optional phone number, and which kind of account they want — customer or designer.
-2. Before anything is saved, the submitted data is checked for basic correctness: is the email actually shaped like an email, is the password long enough and complex enough, are the required fields actually present. Anything that fails this check stops the request immediately — nothing touches the database yet.
+1. A new user submits their email, a password, their full name, an optional phone number, and which kind of account they want — customer or designer. A third account kind, admin, exists in the system but can never be requested through registration — that's a deliberate, hard block (see step 2).
+2. Before anything is saved, the submitted data is checked: is the requested account kind actually one a stranger is allowed to create (admin is rejected outright, no matter what), is the email actually shaped like an email, is the password long enough and complex enough, are the required fields actually present. Anything that fails this check stops the request immediately — nothing touches the database yet.
 3. The email is normalized (extra spaces trimmed, letters lowercased) so that two different-looking versions of the same address are always treated as the same account.
 4. The system checks whether an account with that email already exists. If it does, the registration is rejected as a conflict — no duplicate accounts are allowed, and the email field is the uniqueness key.
 5. The password is never stored as-is. It's run through a one-way hashing process before saving, so even if the database were ever exposed, the original passwords could not be recovered from it.
 6. A new user record is created holding the email, the hashed password, the name, the phone number, the chosen role, and automatic timestamps for when the account was created and last updated.
-7. If — and only if — the chosen role is designer, a second, currently-empty profile record is created and linked to that user, meant to be filled in later with a bio, experience, specialization, and city. Customers never get this extra record at all.
+7. If — and only if — the chosen role is designer, a second, currently-empty profile record is created and linked to that user, meant to be filled in later with a bio, experience, specialization, city, and an availability toggle (defaulting to available). Customers never get this extra record at all.
 8. Immediately after the account is created, the system generates a signed access token for the brand-new user, so they're logged in right away without needing a separate login step straight after signing up.
 9. The response sent back contains that access token plus the basic account details (id, email, name, role) — everything the client-side app needs to consider the user "logged in" from this point forward.
+
+The one and only admin account in the system today was created directly, not through this flow — registration can never produce one, by design.
 
 **Flow diagram:**
 
 ```
 Client sends email, password, fullName, phone, role
+        │
+        ▼
+Is the requested role "admin"?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   400 Bad Request (admin accounts can't self-register)
         │
         ▼
 Validate input shape (format, length, required fields)
@@ -110,6 +120,7 @@ Save new user record
         │         │
         │         ▼
         │   Create empty designer profile, linked to user
+        │   (availability defaults to "available")
         │
         ▼
 Generate signed JWT access token
@@ -314,6 +325,7 @@ Return response with appropriate status code
 6. What comes back is a "page" of results: the actual matching items for this page, plus metadata describing where you are — current page number, how many items per page, how many total matching items exist, and how many total pages there are. Every paginated feature in this API (catalog browsing, bookings list) uses this exact same page-shaped response, so a client only has to learn this pattern once.
 7. Catalog list results are intentionally lightweight — just enough to render a card (title, category name, cover image, price, style) — not the full description, to keep list responses fast and small.
 8. Viewing a single design by its id returns the fuller picture instead: full description, full category details, and who the designer is. If no design exists with that id, the request is rejected as "not found."
+9. A related, equally public lookup lets anyone view a single designer's own profile directly — their bio, experience, specialization, city, current availability, and aggregate rating (see the review flow below for where that rating comes from). This is deliberately just a single-profile lookup by id, not a searchable directory of every designer — that's a natural next step, but isn't built yet. Together with the catalog, this is what lets a customer evaluate a specific designer's work and reputation before deciding to book them directly.
 
 **Flow diagram:**
 
@@ -363,6 +375,24 @@ Map to full detail response (description, category, designer)
         │
         ▼
 200 OK
+
+
+Client requests GET /api/designers/{id}  (public, no token needed)
+        │
+        ▼
+Look up user by id
+        │
+        ├── Not found, or not actually a designer account
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Load that designer's profile (bio, experience, specialization,
+city, availability, aggregate rating)
+        │
+        ▼
+200 OK
 ```
 
 ---
@@ -370,16 +400,17 @@ Map to full detail response (description, category, designer)
 ## 7. Booking Flow
 
 1. Only a logged-in user with the customer role can request a new booking — this is enforced before the request even reaches the booking logic.
-2. To create a booking, the customer specifies which designer they want to consult with, a scheduled date/time in the future, optional notes, and — optionally — a specific design they're interested in.
-3. The system verifies the chosen "designer" really does have the designer role — you can't accidentally (or deliberately) book a "consultation" with another customer.
-4. If a specific design was included, the system also verifies that design actually belongs to the chosen designer — you can't reference someone else's design while booking a different designer.
-5. Assuming everything checks out, a new booking is created in the very first stage of its lifecycle: pending.
+2. A customer has two ways to start a booking. Either they specify exactly which designer they want to consult with (a scheduled date/time in the future, optional notes, and optionally a specific design they're interested in) — or they leave the designer unspecified entirely and instead describe what they need: a rough category of work, a preferred style, a budget, and where the project is located. The second path is "let Velora choose," and it's what feeds the designer-matching flow described next.
+3. If a specific designer was named, the system verifies that user really does have the designer role — you can't accidentally (or deliberately) book a "consultation" with another customer.
+4. If a specific design was included, the system also verifies that design actually belongs to the chosen designer — you can't reference someone else's design while booking a different designer. Referencing a specific design without also naming its designer isn't allowed either — it doesn't make sense to point at one specific designer's work while asking to be matched with someone else.
+5. A booking that named a designer up front starts its life already in the "awaiting designer confirmation" stage. A booking that didn't starts one stage earlier — "awaiting assignment" — since there's genuinely no designer attached yet for anyone to confirm anything with.
 6. When listing bookings, the system automatically shows different things depending on who's asking: a customer sees only the bookings they personally made; a designer sees only the bookings assigned to them. There's no shared "see everything" view — it's always scoped to whoever is currently logged in.
-7. Viewing the details of one specific booking is restricted to the two people actually involved in it — the customer who made it, or the designer it was made with. Anyone else attempting to view it, even if logged in, is rejected.
-8. A booking can be cancelled only by the customer who originally created it, and only while it's still in an early enough stage (pending or confirmed) — once it's been completed, cancelling no longer makes sense and is blocked.
-9. Moving a booking forward through its lifecycle (confirming it, marking it completed) can only be done by the specific designer it's assigned to — not by the customer, and not by any other designer.
+7. Viewing the details of one specific booking is restricted to the people actually involved in it — the customer who made it, or the designer it's currently assigned to (if any). Anyone else attempting to view it, even if logged in, is rejected.
+8. A booking can be cancelled only by the customer who originally created it, and only while it's still in an early enough stage (awaiting assignment, awaiting confirmation, or confirmed) — once it's been completed, cancelling no longer makes sense and is blocked.
+9. Moving a booking forward through its lifecycle (confirming it, marking it completed) can only be done by the specific designer it's assigned to — not by the customer, and not by any other designer, and not at all while it's still awaiting assignment (there's no designer yet to do the confirming).
 10. The lifecycle itself follows a strict, one-directional set of allowed moves:
-    - A pending booking can become confirmed, or be cancelled outright.
+    - A booking awaiting assignment moves forward only by being assigned a designer (see the matching flow) — it cannot skip straight to confirmed or completed.
+    - Once a designer is attached, a pending booking can become confirmed, or be cancelled outright.
     - A confirmed booking can become completed, or still be cancelled.
     - Once a booking is cancelled or completed, it's considered final — no further status changes are permitted from either side, ever.
 11. Any attempt to skip a stage, move backward, change a finished booking, or act on a booking that isn't yours is rejected with a clear explanation of exactly why.
@@ -388,30 +419,38 @@ Map to full detail response (description, category, designer)
 
 ```
 Customer requests a new booking
- (designerId, scheduledAt, optional designId, notes)
+ (scheduledAt, optional notes, and either:
+   designerId (+ optional designId)          — direct pick
+   or category/style/budget/location         — let Velora choose)
         │
         ▼
-Is the target user actually a DESIGNER?
+Was a specific design given without naming its designer?
         │
-        ├── No
+        ├── Yes
         │      │
         │      ▼
         │   400 Bad Request
         │
         ▼
-Was a specific design included?
+Was a designerId given?
         │
-        ├── Yes → does it belong to that designer?
+        ├── Yes → is that user actually a DESIGNER?
         │              │
         │              ├── No
         │              │      │
         │              │      ▼
         │              │   400 Bad Request
         │              ▼
-        │            OK
+        │         Does the optional design belong to that designer?
+        │              │
+        │              ├── No
+        │              │      │
+        │              │      ▼
+        │              │   400 Bad Request
+        │              ▼
+        │         Create booking, status PENDING (designer attached)
         │
-        ▼
-Create booking with status PENDING
+        ├── No →  Create booking, status PENDING_ASSIGNMENT (no designer yet)
         │
         ▼
 201 Created
@@ -429,9 +468,9 @@ Load booking by id
         │
         ▼
 Is the requester an allowed participant?
- • view      → must be the customer OR the designer on it
+ • view      → must be the customer OR the assigned designer (if any)
  • cancel    → must be THE customer on it
- • status    → must be THE designer on it
+ • status    → must be THE assigned designer (booking must have one)
         │
         ├── No
         │      │
@@ -440,8 +479,9 @@ Is the requester an allowed participant?
         │
         ▼
 (For cancel/status) Is this transition allowed from the current status?
-  PENDING   → CONFIRMED or CANCELLED
-  CONFIRMED → COMPLETED or CANCELLED
+  PENDING_ASSIGNMENT → nothing directly (must be assigned first)
+  PENDING            → CONFIRMED or CANCELLED
+  CONFIRMED          → COMPLETED or CANCELLED
   CANCELLED / COMPLETED → nothing (final)
         │
         ├── Not allowed
@@ -458,7 +498,63 @@ Apply the change
 
 ---
 
-## 8. Quotation Flow
+## 8. Designer Assignment & Matching Flow
+
+1. This flow only ever applies to a booking sitting in the "awaiting assignment" stage — one where the customer asked Velora to choose rather than naming a designer themselves.
+2. Only an admin can trigger this. An admin asks the system to rank candidate designers for one specific awaiting-assignment booking.
+3. The system looks at every designer who has currently marked themselves as available — a designer who's toggled themselves unavailable is left out of consideration entirely, before any scoring even happens.
+4. Each remaining candidate is scored against the booking's stated preferences, across several independent factors, each worth a fixed share of a 100-point total: whether their specialization matches the requested category or style; whether their own portfolio actually contains work in that category or style; how many years of experience they have (more counts, up to a cap); whether their location matches where the project is; their aggregate rating from past completed work (a designer with no reviews yet gets a fair, neutral middle score rather than being penalized for being new); and whether the customer's stated budget is realistically in line with that designer's typical pricing based on their past portfolio.
+5. Candidates are sorted highest-score first. If two candidates end up tied, the one currently juggling fewer active bookings is ranked higher — an even, fair way to avoid overloading the same few designers.
+6. The ranked list — each candidate's relevant details plus their score — is handed back to the admin. Nothing is assigned automatically at this point; this is a recommendation, not a decision.
+7. The admin picks one candidate from that list (or in principle any eligible designer at all) and assigns them the same way a booking is normally handed to a designer — at which point the booking leaves "awaiting assignment" and rejoins the exact same lifecycle a directly-booked designer would already be in.
+8. Trying to rank candidates for a booking that isn't actually awaiting assignment (already has a designer, or was cancelled) is rejected — there's nothing to recommend for.
+
+**Flow diagram:**
+
+```
+Admin requests rankings for a booking
+        │
+        ▼
+Is this booking currently PENDING_ASSIGNMENT?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Load every designer currently marked AVAILABLE
+        │
+        ▼
+Score each one against the booking's stated preferences:
+  • specialization / category / style match
+  • their own portfolio has relevant work
+  • years of experience (capped)
+  • project location matches their city
+  • aggregate rating (unrated designers get a neutral score)
+  • budget realistically fits their typical pricing
+        │
+        ▼
+Sort highest score first
+ (tie → prefer whoever has fewer active bookings right now)
+        │
+        ▼
+Return ranked list to the admin — nothing assigned yet
+        │
+        ▼
+Admin picks one candidate
+        │
+        ▼
+Assign that designer to the booking
+ (booking rejoins the normal lifecycle — same as a direct pick)
+        │
+        ▼
+200 OK
+```
+
+---
+
+## 9. Quotation Flow
 
 1. A booking on its own never carries a price — it just gets a designer and customer talking. A quotation is the separate thing that turns that consultation into an actual, priced scope of work: a list of line items and a total cost, which the customer then has to explicitly accept or reject.
 2. Only the designer assigned to a booking can build or edit its quotation. They add line items — each one a description and an amount, optionally broken down further into quantity, unit, and unit price for a fully itemized breakdown — and the system automatically adds them all up into a running total. Nobody ever types in a total by hand; it's always recalculated from the line items themselves, so it can never drift out of sync with what's actually listed.
@@ -552,15 +648,76 @@ Mark as ACCEPTED or REJECTED (final either way)
 
 ---
 
-## 9. Profile Flow
+## 10. Review & Rating Flow
+
+1. Once a booking has actually been marked completed, the customer on it can leave a review — a 1-to-5 rating plus an optional written comment.
+2. Only the customer who was actually on that booking can review it — nobody else, including the designer themselves, can leave one, and it can't be done at all until the booking has genuinely reached its completed stage. Trying to review anything earlier in the lifecycle is rejected.
+3. Exactly one review is allowed per booking, ever. A second attempt on the same booking is rejected outright as a duplicate — there's no editing or replacing a review once it exists in this version.
+4. The moment a review is saved, the designer's overall rating is immediately recalculated from every review they've ever received — not just this newest one — so it always reflects their full track record, not a single data point.
+5. That recalculated aggregate rating is exactly the same number surfaced on the designer's public profile and fed into the designer-matching scoring formula described earlier — a completed project's outcome flows directly back into how future customers evaluate that designer and how future bookings might get matched to them.
+6. Individual written comments aren't listed anywhere yet in this version — only the aggregate score and count are exposed. The comments themselves are stored, so making them viewable later doesn't require changing how reviews are created.
+
+**Flow diagram:**
+
+```
+Customer submits a review for a booking
+ (1-5 rating, optional comment)
+        │
+        ▼
+Is the requester the customer who made this booking?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+Is the booking's status COMPLETED?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Has this booking already been reviewed?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Save the review
+        │
+        ▼
+Reload every review this designer has ever received
+        │
+        ▼
+Recompute their average rating and review count
+        │
+        ▼
+Save the updated aggregate onto the designer's profile
+ (this is what the public profile shows, and what
+  designer-matching scores against going forward)
+        │
+        ▼
+201 Created
+```
+
+---
+
+## 11. Profile Flow
 
 1. A logged-in user can view their own profile — always their own; there is no way to look up someone else's profile through this endpoint.
 2. The response always includes the shared basic details every account has: id, email, name, phone, role, and when the account was created.
-3. On top of that, if the logged-in user is a designer, their designer-specific details are also included — bio, years of experience, specialization, and city. If the user is a customer, that whole section is simply absent from the response rather than showing up empty — customers don't have that data at all, so there's nothing to include.
+3. On top of that, if the logged-in user is a designer, their designer-specific details are also included — bio, years of experience, specialization, city, their current availability toggle, and their aggregate rating and review count. If the user is a customer, that whole section is simply absent from the response rather than showing up empty — customers don't have that data at all, so there's nothing to include.
 4. Updating a profile works as a partial update: the client only sends the fields it actually wants to change, and anything left out is simply untouched — there's no need to resend the entire profile just to change one field.
 5. The basic fields (name, phone) can be updated by anyone, regardless of role.
-6. The designer-specific fields (bio, experience, specialization, city) only ever take effect if the logged-in user is actually a designer. If a customer's update request happens to include any of those fields anyway, they're quietly ignored rather than causing an error — there's simply no designer profile record for them to apply to.
-7. If a designer updates their profile before ever having filled anything in, the missing designer-profile record is created automatically at that moment, rather than requiring a separate "set up your designer profile" step first.
+6. The designer-specific fields (bio, experience, specialization, city, and the availability toggle) only ever take effect if the logged-in user is actually a designer. If a customer's update request happens to include any of those fields anyway, they're quietly ignored rather than causing an error — there's simply no designer profile record for them to apply to.
+7. The availability toggle is entirely self-managed — a designer flips themselves to unavailable or back to available whenever they choose, and that's the only signal the matching flow uses to decide whether to consider them at all. There's no calendar or scheduled time slots behind it yet, just this one on/off flag.
+8. The aggregate rating and review count are read-only from this endpoint — they can never be set directly by anyone. The only way that number ever changes is through the review flow above, recalculated from actual completed-booking reviews.
+9. If a designer updates their profile before ever having filled anything in, the missing designer-profile record is created automatically at that moment, rather than requiring a separate "set up your designer profile" step first.
 
 **Flow diagram:**
 
@@ -608,9 +765,9 @@ Save changes
 
 ---
 
-## 10. Validation Flow
+## 12. Validation Flow
 
-1. Every request that includes a body (registration, login, profile updates, booking creation, status changes, quotation line items) has that body checked against a fixed set of rules before any feature logic runs at all.
+1. Every request that includes a body (registration, login, profile updates, booking creation, status changes, quotation line items, designer assignment, reviews) has that body checked against a fixed set of rules before any feature logic runs at all.
 2. These rules cover things like: is a required field actually present and non-empty; does a value look like a properly formatted email; is a piece of text within its allowed minimum/maximum length; does a number fall within a sensible range; does a password meet its complexity requirement (a minimum length, plus at least one letter and one digit); is a scheduled time actually set in the future rather than the past.
 3. If even one rule fails, the entire request is rejected immediately, before touching the database, with a response listing every single field that failed and a human-readable reason for each one — not just the first problem found, but all of them at once, so a client can fix everything in one pass instead of discovering issues one at a time.
 4. This layer only ever looks at the shape of the data itself — it has no awareness of what else exists in the database. Anything that depends on existing data (is this email already taken, does this designer actually exist, do you actually own this booking) is deliberately handled one layer deeper, inside the business logic, after this basic shape-check has already passed.
@@ -647,15 +804,16 @@ Continue to business logic
 
 ---
 
-## 11. Error Handling Flow
+## 13. Error Handling Flow
 
 1. No matter where something goes wrong in the system — a missing record, a broken rule, bad input, an unexpected bug — it's all funneled through one single, central point before anything is sent back to the client. Individual features never have to build their own custom error responses.
 2. Every error response, regardless of cause, has exactly the same overall shape: when it happened, a numeric status code, a short label for that status, a human-readable message explaining what went wrong, which endpoint was being called, and — only for validation failures — a detailed list of which specific fields were the problem.
 3. Different situations map to different, predictable outcomes:
    - Asking for something that doesn't exist (a user, a design, a booking) results in a "not found" response.
-   - Trying to create something that would duplicate existing data (like registering an email that's already taken) results in a "conflict" response.
-   - Trying to act on something you don't have permission over (someone else's booking) results in a "forbidden" response.
-   - Trying to move something into an invalid state (an illegal booking status change, or editing/responding to a quotation that's already past the stage where that's allowed) also results in a "conflict" response.
+   - Trying to create something that would duplicate existing data (like registering an email that's already taken, assigning a designer to a booking that already has one, or reviewing a booking a second time) results in a "conflict" response.
+   - Trying to act on something you don't have permission over (someone else's booking, someone else's quotation, reviewing a booking that isn't yours) results in a "forbidden" response.
+   - Trying to move something into an invalid state (an illegal booking status change, editing/responding to a quotation that's already past the stage where that's allowed, or reviewing a booking that isn't completed yet) also results in a "conflict" response.
+   - Asking Velora to rank designers for a booking that isn't actually awaiting assignment also results in a "conflict" response.
    - Submitting the wrong login credentials results in an "unauthorized" response.
    - Missing or invalid login on a protected endpoint results in "unauthorized"; being logged in but lacking the right role results in "forbidden."
    - Submitting badly-shaped input results in a "bad request" response with the field-by-field breakdown.
@@ -695,7 +853,7 @@ Send to client
 
 ---
 
-## 12. Documentation Flow
+## 14. Documentation Flow
 
 1. A live, interactive description of every available endpoint is generated automatically, straight from the real code — there's no separate document to keep updated by hand, so it can never fall out of sync with what the API actually does.
 2. Anyone can open this documentation in a browser and see, for every endpoint: what it expects as input, what it returns, and what error cases look like.
@@ -730,7 +888,7 @@ Protected endpoints can be tested directly from the browser
 
 ---
 
-## 13. Environment & Configuration Flow
+## 15. Environment & Configuration Flow
 
 1. Anything sensitive or environment-specific — database connection details, the JWT signing secret, which frontend addresses are allowed to call the API — is never written directly into the codebase. It's always supplied from outside, through environment variables, so the same code can run against different databases and settings in different places without being changed itself.
 2. During local development, these values are supplied automatically from a local configuration file that lives only on the developer's machine and is deliberately excluded from version control — so real secrets are never accidentally shared or committed anywhere.

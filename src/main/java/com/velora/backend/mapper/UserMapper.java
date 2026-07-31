@@ -14,7 +14,10 @@ public class UserMapper {
                 designerProfile.getBio(),
                 designerProfile.getYearsExperience(),
                 designerProfile.getSpecialization(),
-                designerProfile.getCity()
+                designerProfile.getCity(),
+                designerProfile.getAvailabilityStatus(),
+                designerProfile.getAverageRating(),
+                designerProfile.getRatingCount()
         );
 
         return new UserProfileResponse(
