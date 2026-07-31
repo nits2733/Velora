@@ -1,61 +1,96 @@
-# Velora Backend
+<div align="center">
 
-Spring Boot 3 / Java 21 REST API for Velora, a home-services app.
+# 🏠 Velora Backend
 
-Velora supports two customer journeys: **Full Home Services** (a designer-led,
+**One platform for every home service — from a full interior-design transformation to a single plumbing fix.**
+
+[![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/21/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white)](https://neon.tech)
+[![Flyway](https://img.shields.io/badge/Flyway-migrations-CC0200?logo=flyway&logoColor=white)](https://flywaydb.org/)
+[![JWT](https://img.shields.io/badge/Auth-JWT-000000?logo=jsonwebtokens&logoColor=white)](https://jwt.io/)
+[![Build](https://img.shields.io/badge/build-Maven-C71A36?logo=apachemaven&logoColor=white)](https://maven.apache.org/)
+[![License](https://img.shields.io/badge/status-MVP-2f7a4d)]()
+
+[Quick Start](#-quick-start) • [API Reference](#-api-reference) • [Architecture](#-architecture) • [Domain Model](#-domain-model) • [Design Notes](#-design-notes--extensibility)
+
+</div>
+
+---
+
+## 📖 Overview
+
+Velora supports two customer journeys — **Full Home Services** (a designer-led,
 end-to-end interior-design project) and **Individual Services** (a standalone trade
-job — painting, plumbing, electrical, carpentry, false ceiling, modular kitchen). Both
-share the same account type (a `PROFESSIONAL`), the same portfolio model, and the same
-booking lifecycle. A customer can either pick a specific professional directly
-(browsing their public profile and portfolio first, Full Home Services only) or ask
-Velora to assign the best-fit one — an admin then gets a ranked, scored list of
-candidate professionals (specialization, portfolio, experience, location, rating,
-budget fit) and assigns the pick. Either path converges into the same journey:
-booking → quotation → (future) project execution → completion → review.
+job: painting, plumbing, electrical, carpentry, false ceiling, modular kitchen). Both
+share the same account type (`PROFESSIONAL`), the same portfolio model, and the same
+booking lifecycle.
 
-Full scope beyond what's built so far — project execution/scheduling, milestones,
-payments, material procurement — is tracked as later phases; see
-[`IMPLEMENTATION_FLOW.md`](./IMPLEMENTATION_FLOW.md) and [`FLOW.md`](./FLOW.md) for
-exactly what's built vs. not.
+A customer can either pick a specific professional directly (browsing their public
+profile and portfolio first, Full Home Services only) or ask Velora to assign the
+best-fit one — an admin then gets a ranked, scored list of candidate professionals
+(specialization, portfolio, experience, location, rating, budget fit) and assigns the
+pick. Either path converges into the same journey:
 
-## Tech Stack
+```mermaid
+flowchart LR
+    A[Booking] --> B[Quotation] --> C["Project Execution *(future)*"] --> D[Completion] --> E[Review]
+```
 
-- Java 21, Spring Boot 3.3
-- Spring Security + JWT (jjwt) — stateless auth, three roles (CUSTOMER, PROFESSIONAL, ADMIN)
-- Spring Data JPA + PostgreSQL (hosted on [Neon](https://neon.tech), no local DB server needed)
-- Flyway for schema migrations
-- springdoc-openapi (Swagger UI)
-- spring-dotenv (auto-loads `.env` at startup)
-- Maven
+> 📄 Full scope beyond what's built so far — project execution/scheduling, milestones,
+> payments, material procurement — is tracked as later phases. See
+> [`IMPLEMENTATION_FLOW.md`](./IMPLEMENTATION_FLOW.md) and [`FLOW.md`](./FLOW.md) for
+> exactly what's built vs. not, and [`Velora-Whitepaper.html`](./Velora-Whitepaper.html)
+> for the full product + architecture writeup (open in a browser, print-to-PDF for a
+> shareable document).
 
-## Getting Started
+## 🧰 Tech Stack
 
-### 1. Get a Postgres connection
+| | |
+|---|---|
+| **Language / Runtime** | Java 21 |
+| **Framework** | Spring Boot 3.3 |
+| **Security** | Spring Security + JWT (jjwt) — stateless auth, 3 roles: `CUSTOMER`, `PROFESSIONAL`, `ADMIN` |
+| **Persistence** | Spring Data JPA + PostgreSQL, hosted on [Neon](https://neon.tech) — no local DB server needed |
+| **Migrations** | Flyway — schema owned entirely by version-controlled `.sql` files |
+| **Docs** | springdoc-openapi (Swagger UI) |
+| **Config** | spring-dotenv — auto-loads `.env` at startup |
+| **Build** | Maven |
 
-This project runs against a cloud-hosted **Neon** Postgres instance — no local
-database server or Docker required. Create a free project at
-[neon.tech](https://neon.tech) (or point at any Postgres 14+ instance you already
-have) and grab its connection string.
+## 🚀 Quick Start
 
-### 2. Configure environment
+<table>
+<tr><td width="32px" align="center"><b>1</b></td><td>
 
-Copy `.env.example` to `.env` and fill in your real values:
+**Get a Postgres connection.** This project runs against a cloud-hosted **Neon**
+instance — no local DB server or Docker required. Create a free project at
+[neon.tech](https://neon.tech) (or point at any Postgres 14+ instance you already have)
+and grab its connection string.
+
+</td></tr>
+<tr><td align="center"><b>2</b></td><td>
+
+**Configure environment.** Copy `.env.example` to `.env` and fill in your real values:
 
 ```bash
 cp .env.example .env
 ```
 
 At minimum set:
-- `DB_URL` — e.g. `jdbc:postgresql://<your-neon-host>/<dbname>?sslmode=require`
-- `DB_USERNAME` / `DB_PASSWORD` — from your Postgres provider
-- `JWT_SECRET` — 32+ bytes; generate one with `openssl rand -base64 48`
+| Variable | Purpose |
+|---|---|
+| `DB_URL` | e.g. `jdbc:postgresql://<your-neon-host>/<dbname>?sslmode=require` |
+| `DB_USERNAME` / `DB_PASSWORD` | From your Postgres provider |
+| `JWT_SECRET` | 32+ bytes; generate with `openssl rand -base64 48` |
 
-The app **fails fast at startup** if `JWT_SECRET` is missing or too short — this is
-intentional, it must never be allowed to default silently in a real deployment.
-`.env` is gitignored and loaded automatically at startup via `spring-dotenv`; you
-never need to manually `export` anything.
+> ⚠️ The app **fails fast at startup** if `JWT_SECRET` is missing or too short — this
+> is intentional, it must never default silently in a real deployment. `.env` is
+> gitignored and loaded automatically via `spring-dotenv`; nothing to `export` manually.
 
-### 3. Run
+</td></tr>
+<tr><td align="center"><b>3</b></td><td>
+
+**Run it.**
 
 ```bash
 mvn spring-boot:run
@@ -68,100 +103,172 @@ have to generate one immediately, plus verbose SQL logging):
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-Flyway applies every migration in `src/main/resources/db/migration/` automatically
-on startup, in order (`V1` through the latest — see
-[Database Migrations](#database-migrations) below).
+Flyway applies every migration in `src/main/resources/db/migration/` automatically on
+startup, in order (`V1` through the latest — see [Database Migrations](#-database-migrations)).
 
-### 4. Explore the API
+</td></tr>
+<tr><td align="center"><b>4</b></td><td>
 
-- Swagger UI: http://localhost:8080/swagger-ui/index.html
-- OpenAPI JSON: http://localhost:8080/v3/api-docs
-- Health check: http://localhost:8080/actuator/health
+**Explore the API.**
 
-### 5. Log in as the seeded accounts
+| Resource | URL |
+|---|---|
+| 📘 Swagger UI | http://localhost:8080/swagger-ui/index.html |
+| 📄 OpenAPI JSON | http://localhost:8080/v3/api-docs |
+| ❤️ Health check | http://localhost:8080/actuator/health |
 
-Two accounts are seeded by migrations so you can exercise the API immediately without
-registering everything from scratch:
+</td></tr>
+<tr><td align="center"><b>5</b></td><td>
+
+**Log in as a seeded account** — no need to register anything to start exploring:
 
 | Account | Email | Password | Role |
 |---|---|---|---|
-| Demo professional | `designer@velora.com` | `Designer@123` | PROFESSIONAL |
-| Bootstrap admin | `admin@velora.com` | `Admin@123` | ADMIN |
+| Demo professional | `designer@velora.com` | `Designer@123` | `PROFESSIONAL` |
+| Bootstrap admin | `admin@velora.com` | `Admin@123` | `ADMIN` |
 
-(The demo professional account's email/password were seeded before the `DESIGNER`→
-`PROFESSIONAL` rename — only its `role` column changed, not its login credentials.)
+<details>
+<summary>Why the demo account's email still says "designer"</summary>
+<br>
 
-There's no self-registration path for admin accounts (`AuthService.register` blocks
-it unconditionally) — the seeded account above is currently the only way to reach any
+Its email/password were seeded before the `DESIGNER`→`PROFESSIONAL` rename — only its
+`role` column changed, not its login credentials.
+</details>
+
+There's no self-registration path for admin accounts (`AuthService.register` blocks it
+unconditionally) — the seeded account above is currently the only way to reach any
 `/api/bookings/{id}/assign` or `/recommendations` endpoint.
 
-## Running Tests
+</td></tr>
+</table>
+
+## ✅ Running Tests
 
 ```bash
 mvn test
 ```
+
+<details>
+<summary><b>What's covered</b></summary>
+<br>
 
 Unit tests (JUnit 5 + Mockito + AssertJ) cover: JWT issuance/validation, auth
 registration rules (duplicate email, admin self-registration blocked, professional
 profile auto-creation), booking creation/state-transition/ownership rules (including
 the Full Home Services vs. Individual Service split and the assignment-request path),
 quotation draft/send/accept/reject rules, professional-matching scoring/ranking/
-tie-breaking, and review creation/duplicate-prevention/rating recomputation. There is
-no integration test against a real Postgres instance in this environment — verify
-manually against your Neon instance with `mvn spring-boot:run` and the endpoints below
-before deploying.
+tie-breaking, portfolio-item upload rules, and review creation/duplicate-prevention/
+rating recomputation.
 
-## Module Overview
+There is no integration test against a real Postgres instance in this environment —
+verify manually against your Neon instance with `mvn spring-boot:run` and the endpoints
+below before deploying.
+</details>
+
+## 🧩 Module Overview
 
 | Module | Responsibility |
 |---|---|
-| Auth | Register (customer/professional only), login, JWT issuance, password hashing (BCrypt) |
-| User | Get/update own profile — customer, or professional (bio/specialization/city/availability/rating) |
-| Professional (public) | Single-professional public profile lookup by id (bio, experience, availability, rating) |
-| Portfolio | Categories, professional work-sample catalog with search/filter/pagination/upload, item detail |
-| Booking | Book a Full Home Services project (direct professional pick, or request Velora to assign one) or an Individual Service request (always Velora-assigned) |
-| Professional Matching | Admin-only: rank candidate professionals for an assignment-requested booking |
-| Quotation | Post-consultation itemized estimate: draft → send → customer accepts/rejects |
-| Review | One rating (1-5) + comment per completed booking; recomputes the professional's aggregate rating |
+| 🔐 Auth | Register (customer/professional only), login, JWT issuance, password hashing (BCrypt) |
+| 👤 User | Get/update own profile — customer, or professional (bio/specialization/city/availability/rating) |
+| 🧑‍🔧 Professional (public) | Single-professional public profile lookup by id (bio, experience, availability, rating) |
+| 🖼️ Portfolio | Categories, professional work-sample catalog with search/filter/pagination/upload, item detail |
+| 📅 Booking | Book a Full Home Services project (direct professional pick, or request Velora to assign one) or an Individual Service request (always Velora-assigned) |
+| 🎯 Professional Matching | Admin-only: rank candidate professionals for an assignment-requested booking |
+| 💰 Quotation | Post-consultation itemized estimate: draft → send → customer accepts/rejects |
+| ⭐ Review | One rating (1–5) + comment per completed booking; recomputes the professional's aggregate rating |
 
-Explicitly **out of scope** so far: project execution/scheduling, milestones,
-payments (Razorpay), notifications (Firebase), Cloudinary image upload (portfolio
-items accept an image *URL* today, not a file), Google Maps, refresh tokens, OTP,
-password reset, a real professional-availability calendar (today it's a simple
-self-toggled flag), and a searchable professional directory (today it's
-single-profile lookup by id only).
+<details>
+<summary><b>Explicitly out of scope so far</b></summary>
+<br>
 
-## API Reference
+Project execution/scheduling, milestones, payments (Razorpay), notifications
+(Firebase), Cloudinary image upload (portfolio items accept an image *URL* today, not
+a file), Google Maps, refresh tokens, OTP, password reset, a real
+professional-availability calendar (today it's a simple self-toggled flag), and a
+searchable professional directory (today it's single-profile lookup by id only).
+</details>
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TD
+    C["Controller\nHTTP mapping, @PreAuthorize role checks, request validation"] --> M["Mapper\nEntity ⇄ DTO conversion"]
+    M --> S["Service\nBusiness rules, state-transition validation, @Transactional"]
+    S --> R["Repository\nSpring Data JPA — derived methods & Specification joins only"]
+    R --> DB[("PostgreSQL\nhosted on Neon · schema owned by Flyway")]
+```
+
+DTOs never expose entities directly; every request flows the same direction, no layer
+is ever skipped. **Zero `@Query`/native SQL anywhere** — everything goes through
+Spring Data derived query methods or `Specification` joins.
+
+## 🗺️ Domain Model
+
+```mermaid
+erDiagram
+    USER ||--o| PROFESSIONAL_PROFILE : "has, if role=PROFESSIONAL"
+    USER ||--o{ BOOKING : "books (customer)"
+    USER ||--o{ BOOKING : "assigned to (professional)"
+    USER ||--o{ PORTFOLIO_ITEM : "showcases"
+    CATEGORY ||--o{ PORTFOLIO_ITEM : "classifies"
+    CATEGORY ||--o{ BOOKING : "classifies"
+    PORTFOLIO_ITEM ||--o| INTERIOR_DESIGN_DETAILS : "optional satellite"
+    BOOKING |o--o| PORTFOLIO_ITEM : "optionally references"
+    BOOKING ||--o| QUOTATION : "gets"
+    BOOKING ||--o| REVIEW : "gets, once completed"
+```
+
+`PortfolioItem` is generic across every trade; `InteriorDesignDetails` is an optional
+1-to-1 satellite carrying `styleTag`/`priceEstimate` — populated only for interior-design
+work, so a painter's or plumber's item simply has no row there. See
+[Design Notes](#-design-notes--extensibility) for why.
+
+## 📡 API Reference
 
 All endpoints are prefixed `/api`. Protected endpoints require
 `Authorization: Bearer <token>`.
 
-### Auth (public)
+<details>
+<summary><b>🔐 Auth (public)</b></summary>
+
 | Method | Path | Description |
 |---|---|---|
 | POST | `/auth/register` | Register as CUSTOMER or PROFESSIONAL (ADMIN is rejected) |
 | POST | `/auth/login` | Login, returns a JWT |
+</details>
 
-### User (authenticated)
+<details>
+<summary><b>👤 User (authenticated)</b></summary>
+
 | Method | Path | Description |
 |---|---|---|
 | GET | `/users/profile` | Get own profile (includes professional profile section if PROFESSIONAL) |
 | PUT | `/users/profile` | Update own profile (partial update, incl. availability toggle) |
+</details>
 
-### Professionals (public)
+<details>
+<summary><b>🧑‍🔧 Professionals (public)</b></summary>
+
 | Method | Path | Description |
 |---|---|---|
 | GET | `/professionals/{id}` | Get one professional's public profile |
+</details>
 
-### Portfolio Catalog
+<details open>
+<summary><b>🖼️ Portfolio Catalog</b></summary>
+
 | Method | Path | Role | Description |
 |---|---|---|---|
 | GET | `/categories` | public | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
 | GET | `/portfolio?category=&search=&style=&page=&size=&sortBy=&direction=` | public | Paginated/filterable portfolio catalog |
 | GET | `/portfolio/{id}` | public | Portfolio item detail |
 | POST | `/portfolio` | PROFESSIONAL | Upload a new portfolio item under the caller's own account; `styleTag`/`priceEstimate` are optional — supplying either creates the item's `InteriorDesignDetails` satellite, omitting both leaves it a plain generic item |
+</details>
 
-### Bookings (authenticated)
+<details open>
+<summary><b>📅 Bookings (authenticated)</b></summary>
+
 | Method | Path | Role | Description |
 |---|---|---|---|
 | POST | `/bookings` | CUSTOMER | Create a booking — `requestType` FULL_HOME_PROJECT (with or without a chosen `professionalId`) or INDIVIDUAL_SERVICE (always Velora-assigned) |
@@ -171,8 +278,11 @@ All endpoints are prefixed `/api`. Protected endpoints require
 | PATCH | `/bookings/{id}/status` | PROFESSIONAL (assigned) | PENDING→CONFIRMED/CANCELLED, CONFIRMED→COMPLETED/CANCELLED |
 | GET | `/bookings/{id}/recommendations` | ADMIN | Ranked candidate professionals for a booking awaiting assignment |
 | PATCH | `/bookings/{id}/assign` | ADMIN | Assign a professional to a booking awaiting assignment |
+</details>
 
-### Quotations (authenticated, nested under a booking)
+<details>
+<summary><b>💰 Quotations (authenticated, nested under a booking)</b></summary>
+
 | Method | Path | Role | Description |
 |---|---|---|---|
 | PUT | `/bookings/{bookingId}/quotation` | PROFESSIONAL (assigned) | Create/replace a draft quotation |
@@ -180,53 +290,56 @@ All endpoints are prefixed `/api`. Protected endpoints require
 | GET | `/bookings/{bookingId}/quotation` | participant | Get the quotation |
 | PATCH | `/bookings/{bookingId}/quotation/accept` | CUSTOMER (owner) | Accept a sent quotation |
 | PATCH | `/bookings/{bookingId}/quotation/reject` | CUSTOMER (owner) | Reject a sent quotation |
+</details>
 
-### Reviews (authenticated, nested under a booking)
+<details>
+<summary><b>⭐ Reviews (authenticated, nested under a booking)</b></summary>
+
 | Method | Path | Role | Description |
 |---|---|---|---|
-| POST | `/bookings/{bookingId}/review` | CUSTOMER (owner) | Leave a 1-5 rating + comment (only once, only after COMPLETED) |
+| POST | `/bookings/{bookingId}/review` | CUSTOMER (owner) | Leave a 1–5 rating + comment (only once, only after COMPLETED) |
+</details>
 
-## Environment Variables
+## ⚙️ Environment Variables
 
 See `.env.example` for the full list: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
 `DB_POOL_SIZE`, `JWT_SECRET` (required, 32+ bytes), `JWT_EXPIRATION_MS`,
 `CORS_ALLOWED_ORIGINS`, `PORT`.
 
-## Database Migrations
+## 🧬 Database Migrations
 
 `ddl-auto: validate` — the schema is owned entirely by Flyway migrations in
 `src/main/resources/db/migration/`, never by Hibernate auto-DDL. Migrations already
 applied are **never edited** — every change, including fixing a mistake in a previous
 migration, is a new `V{n}__description.sql` file.
 
-| Migration | What it does |
-|---|---|
-| `V1__init_schema.sql` | Creates `users`, `designer_profiles`, `categories`, `designs`, `bookings` (original names, since renamed — see `V7`/`V8`) |
-| `V2__seed_data.sql` | Seeds categories, a demo designer account + profile, sample designs |
-| `V3__quotations.sql` | Adds `quotations` + `quotation_line_items` |
-| `V4__admin_and_designer_assignment.sql` | Adds `ADMIN` role, makes `bookings.designer_id` nullable, adds `PENDING_ASSIGNMENT` status, seeds a bootstrap admin account |
-| `V5__ratings_and_availability.sql` | Adds `reviews`; adds availability/rating columns to `designer_profiles`; adds category/style/budget/location columns to `bookings` for matching |
-| `V6__widen_review_rating_column.sql` | Fixes a `SMALLINT`/`INTEGER` column-type mismatch found in `V5` at first boot |
-| `V7__rename_designer_to_professional_and_add_request_types.sql` | Renames role `DESIGNER`→`PROFESSIONAL`, `designer_profiles`→`professional_profiles`, every `designer_id` column→`professional_id`; adds `bookings.request_type` (`FULL_HOME_PROJECT`/`INDIVIDUAL_SERVICE`) and `categories.service_group` (`HOME_PROJECT`/`INDIVIDUAL_SERVICE`); seeds the six Individual Service trade categories |
-| `V8__generalize_design_to_portfolio_item.sql` | Renames `designs`→`portfolio_items`, `bookings.design_id`→`portfolio_item_id`; splits `style_tag`/`price_estimate` out into a new optional `interior_design_details` satellite table |
+| # | Migration | What it does |
+|---|---|---|
+| V1 | `init_schema.sql` | Creates `users`, `designer_profiles`, `categories`, `designs`, `bookings` (original names, since renamed — see V7/V8) |
+| V2 | `seed_data.sql` | Seeds categories, a demo designer account + profile, sample designs |
+| V3 | `quotations.sql` | Adds `quotations` + `quotation_line_items` |
+| V4 | `admin_and_designer_assignment.sql` | Adds `ADMIN` role, makes `bookings.designer_id` nullable, adds `PENDING_ASSIGNMENT` status, seeds a bootstrap admin account |
+| V5 | `ratings_and_availability.sql` | Adds `reviews`; adds availability/rating columns to `designer_profiles`; adds category/style/budget/location columns to `bookings` for matching |
+| V6 | `widen_review_rating_column.sql` | Fixes a `SMALLINT`/`INTEGER` column-type mismatch found in V5 at first boot |
+| V7 | `rename_designer_to_professional_and_add_request_types.sql` | Renames role `DESIGNER`→`PROFESSIONAL`, `designer_profiles`→`professional_profiles`, every `designer_id` column→`professional_id`; adds `bookings.request_type` and `categories.service_group`; seeds the six Individual Service trade categories |
+| V8 | `generalize_design_to_portfolio_item.sql` | Renames `designs`→`portfolio_items`, `bookings.design_id`→`portfolio_item_id`; splits `style_tag`/`price_estimate` into a new optional `interior_design_details` satellite table |
 
-## Design Notes / Extensibility
+## 💡 Design Notes / Extensibility
 
-- **`PortfolioItem` + optional `InteriorDesignDetails`, not one flat table.** A work
-  sample is generic across every trade (`title`, `description`, `category`,
-  `coverImageUrl`) — a painter's before/after photo and an interior designer's concept
-  board are the same shape at that level. Only interior design work has a structured
-  `styleTag`/`priceEstimate` worth filtering and sorting on, so those two fields live
-  in a separate, optional 1-to-1 `InteriorDesignDetails` row instead of on
-  `PortfolioItem` itself — a plumber's or electrician's portfolio item simply has no
-  row there. This mirrors the same shape already used for `User` + optional
-  `ProfessionalProfile` (one satellite row only if relevant), rather than introducing
-  a new pattern, a generic JSON metadata blob (which would break this codebase's
-  zero-`@Query`, fully-typed-and-filterable convention), or JPA inheritance (more
-  complexity than the domain currently needs).
-- A professional can upload their own portfolio items (`POST /portfolio`) — but there's
-  still no update/delete endpoint yet, so a mis-entered item can't be corrected or
-  removed via the API today.
+> **`PortfolioItem` + optional `InteriorDesignDetails`, not one flat table.**
+> A work sample is generic across every trade (`title`, `description`, `category`,
+> `coverImageUrl`) — a painter's before/after photo and an interior designer's concept
+> board are the same shape at that level. Only interior design work has a structured
+> `styleTag`/`priceEstimate` worth filtering and sorting on, so those two fields live
+> in a separate, optional 1-to-1 `InteriorDesignDetails` row instead of on
+> `PortfolioItem` itself. This mirrors the same shape already used for `User` +
+> optional `ProfessionalProfile`, rather than introducing a generic JSON metadata blob
+> (which would break this codebase's zero-`@Query`, fully-typed-and-filterable
+> convention) or JPA inheritance (more complexity than the domain currently needs).
+
+- A professional can upload their own portfolio items (`POST /portfolio`) — but
+  there's still no update/delete endpoint yet, so a mis-entered item can't be
+  corrected or removed via the API today.
 - Portfolio images are plain URL strings (`cover_image_url`) for now — swap for a
   Cloudinary-backed upload flow later without changing `PortfolioItem`'s public shape.
 - Portfolio items are never directly purchasable — a booking only optionally
@@ -236,16 +349,34 @@ migration, is a new `V{n}__description.sql` file.
   scheduling calendar — `ProfessionalMatchingService` just filters on it. A future
   calendar can replace the stored flag with a computed one without changing how
   matching consumes it.
-- Professional matching is a transparent, deterministic weighted formula — out of 100
-  points: specialization/category match 30, portfolio evidence 20 (category match 10 +
-  style match 10), experience 15 (capped at 10 years), location match 15, rating 15
-  (unrated professionals get a neutral 3.0/5 midpoint, not zero), budget fit 5 — no ML,
-  no external scoring service — and always produces a **ranked list an admin
-  confirms**, never a silent auto-assignment.
-- JWT is access-token-only (no refresh token) — expiry is deliberately short-lived-friendly
-  via `JWT_EXPIRATION_MS`; refresh-token rotation is a later phase.
+
+**Professional matching score — deterministic, out of 100:**
+
+| Factor | Points |
+|---|---:|
+| Specialization / category match | 30 |
+| Portfolio evidence (category 10 + style 10) | 20 |
+| Experience (capped at 10 years) | 15 |
+| Location match | 15 |
+| Rating (unrated professionals get a neutral 3.0/5, not zero) | 15 |
+| Budget fit | 5 |
+
+No ML, no external scoring service — and it always produces a **ranked list an admin
+confirms**, never a silent auto-assignment.
+
+- JWT is access-token-only (no refresh token) — expiry is deliberately
+  short-lived-friendly via `JWT_EXPIRATION_MS`; refresh-token rotation is a later phase.
 - All list endpoints are paginated (`page`, `size`, capped at 50) from day one to avoid
   an unpaginated endpoint becoming a breaking change later.
-- See [`IMPLEMENTATION_FLOW.md`](./IMPLEMENTATION_FLOW.md) for a full code-level
-  walkthrough of every layer, and [`FLOW.md`](./FLOW.md) for a no-code, plain-language
-  walkthrough of every request flow end to end.
+
+---
+
+<div align="center">
+
+📄 [`IMPLEMENTATION_FLOW.md`](./IMPLEMENTATION_FLOW.md) — full code-level walkthrough of every layer
+&nbsp;•&nbsp;
+🧭 [`FLOW.md`](./FLOW.md) — plain-language walkthrough of every request flow
+&nbsp;•&nbsp;
+📘 [`Velora-Whitepaper.html`](./Velora-Whitepaper.html) — product + architecture whitepaper (print-to-PDF)
+
+</div>
