@@ -3,11 +3,11 @@ package com.velora.backend.service;
 import com.velora.backend.dto.auth.AuthResponse;
 import com.velora.backend.dto.auth.LoginRequest;
 import com.velora.backend.dto.auth.RegisterRequest;
-import com.velora.backend.entity.DesignerProfile;
+import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
 import com.velora.backend.exception.DuplicateResourceException;
-import com.velora.backend.repository.DesignerProfileRepository;
+import com.velora.backend.repository.ProfessionalProfileRepository;
 import com.velora.backend.repository.UserRepository;
 import com.velora.backend.security.JwtService;
 import com.velora.backend.security.UserPrincipal;
@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final DesignerProfileRepository designerProfileRepository;
+    private final ProfessionalProfileRepository professionalProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
@@ -50,11 +50,11 @@ public class AuthService {
 
         user = userRepository.save(user);
 
-        if (user.getRole() == Role.DESIGNER) {
-            DesignerProfile profile = DesignerProfile.builder()
+        if (user.getRole() == Role.PROFESSIONAL) {
+            ProfessionalProfile profile = ProfessionalProfile.builder()
                     .user(user)
                     .build();
-            designerProfileRepository.save(profile);
+            professionalProfileRepository.save(profile);
         }
 
         UserPrincipal principal = UserPrincipal.fromEntity(user);

@@ -1,13 +1,13 @@
 package com.velora.backend.controller;
 
-import com.velora.backend.dto.booking.AssignDesignerRequest;
+import com.velora.backend.dto.booking.AssignProfessionalRequest;
 import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.dto.booking.BookingStatusUpdateRequest;
-import com.velora.backend.dto.booking.DesignerMatchResponse;
+import com.velora.backend.dto.booking.ProfessionalMatchResponse;
 import com.velora.backend.security.UserPrincipal;
 import com.velora.backend.service.BookingService;
-import com.velora.backend.service.DesignerMatchingService;
+import com.velora.backend.service.ProfessionalMatchingService;
 import com.velora.backend.util.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,17 +34,17 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/bookings")
 @RequiredArgsConstructor
-@Tag(name = "Bookings", description = "Consultation booking lifecycle")
+@Tag(name = "Bookings", description = "Full Home Services and Individual Service booking lifecycle")
 public class BookingController {
 
     private static final int MAX_PAGE_SIZE = 50;
 
     private final BookingService bookingService;
-    private final DesignerMatchingService designerMatchingService;
+    private final ProfessionalMatchingService professionalMatchingService;
 
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
-    @Operation(summary = "Book a consultation with a designer")
+    @Operation(summary = "Create a booking - Full Home Services (with or without a chosen professional) or an Individual Service request")
     public ResponseEntity<BookingResponse> create(@AuthenticationPrincipal UserPrincipal principal,
                                                    @Valid @RequestBody BookingRequest request) {
         BookingResponse response = bookingService.createBooking(principal.getId(), request);
@@ -52,7 +52,7 @@ public class BookingController {
     }
 
     @GetMapping
-    @Operation(summary = "List bookings for the current user (customer sees own, designer sees assigned)")
+    @Operation(summary = "List bookings for the current user (customer sees own, professional sees assigned)")
     public ResponseEntity<PageResponse<BookingResponse>> getBookings(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(defaultValue = "0") int page,
@@ -80,8 +80,8 @@ public class BookingController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Update booking status (designer only)")
+    @PreAuthorize("hasRole('PROFESSIONAL')")
+    @Operation(summary = "Update booking status (assigned professional only)")
     public ResponseEntity<BookingResponse> updateStatus(@AuthenticationPrincipal UserPrincipal principal,
                                                           @PathVariable Long id,
                                                           @Valid @RequestBody BookingStatusUpdateRequest request) {
@@ -90,16 +90,16 @@ public class BookingController {
 
     @PatchMapping("/{id}/assign")
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Assign a designer to a booking awaiting assignment (admin only)")
+    @Operation(summary = "Assign a professional to a booking awaiting assignment (admin only)")
     public ResponseEntity<BookingResponse> assign(@PathVariable Long id,
-                                                   @Valid @RequestBody AssignDesignerRequest request) {
-        return ResponseEntity.ok(bookingService.assignDesigner(id, request.designerId()));
+                                                   @Valid @RequestBody AssignProfessionalRequest request) {
+        return ResponseEntity.ok(bookingService.assignProfessional(id, request.professionalId()));
     }
 
     @GetMapping("/{id}/recommendations")
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Rank candidate designers for a booking awaiting assignment (admin only)")
-    public ResponseEntity<List<DesignerMatchResponse>> recommendations(@PathVariable Long id) {
-        return ResponseEntity.ok(designerMatchingService.recommend(id));
+    @Operation(summary = "Rank candidate professionals for a booking awaiting assignment (admin only)")
+    public ResponseEntity<List<ProfessionalMatchResponse>> recommendations(@PathVariable Long id) {
+        return ResponseEntity.ok(professionalMatchingService.recommend(id));
     }
 }

@@ -29,8 +29,8 @@ public class QuotationController {
     private final QuotationService quotationService;
 
     @PutMapping
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Create or update a draft quotation for a booking (designer only)")
+    @PreAuthorize("hasRole('PROFESSIONAL')")
+    @Operation(summary = "Create or update a draft quotation for a booking (professional only)")
     public ResponseEntity<QuotationResponse> saveDraft(@AuthenticationPrincipal UserPrincipal principal,
                                                         @PathVariable Long bookingId,
                                                         @Valid @RequestBody SaveQuotationRequest request) {
@@ -38,15 +38,15 @@ public class QuotationController {
     }
 
     @PostMapping("/send")
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Send a draft quotation to the customer (designer only)")
+    @PreAuthorize("hasRole('PROFESSIONAL')")
+    @Operation(summary = "Send a draft quotation to the customer (professional only)")
     public ResponseEntity<QuotationResponse> send(@AuthenticationPrincipal UserPrincipal principal,
                                                    @PathVariable Long bookingId) {
         return ResponseEntity.ok(quotationService.send(principal.getId(), bookingId));
     }
 
     @GetMapping
-    @Operation(summary = "Get the quotation for a booking (customer or assigned designer only)")
+    @Operation(summary = "Get the quotation for a booking (customer or assigned professional only)")
     public ResponseEntity<QuotationResponse> get(@AuthenticationPrincipal UserPrincipal principal,
                                                   @PathVariable Long bookingId) {
         return ResponseEntity.ok(quotationService.get(principal.getId(), bookingId));

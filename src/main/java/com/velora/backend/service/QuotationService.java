@@ -29,9 +29,9 @@ public class QuotationService {
     private final QuotationMapper quotationMapper;
 
     @Transactional
-    public QuotationResponse saveDraft(Long designerId, Long bookingId, SaveQuotationRequest request) {
+    public QuotationResponse saveDraft(Long professionalId, Long bookingId, SaveQuotationRequest request) {
         Booking booking = findBooking(bookingId);
-        assertIsAssignedDesigner(designerId, booking);
+        assertIsAssignedProfessional(professionalId, booking);
 
         Quotation quotation = quotationRepository.findByBookingId(bookingId)
                 .orElseGet(() -> Quotation.builder()
@@ -52,9 +52,9 @@ public class QuotationService {
     }
 
     @Transactional
-    public QuotationResponse send(Long designerId, Long bookingId) {
+    public QuotationResponse send(Long professionalId, Long bookingId) {
         Quotation quotation = findQuotationByBooking(bookingId);
-        assertIsAssignedDesigner(designerId, quotation.getBooking());
+        assertIsAssignedProfessional(professionalId, quotation.getBooking());
 
         if (quotation.getStatus() != QuotationStatus.DRAFT) {
             throw new InvalidStateTransitionException("Only a draft quotation can be sent");
@@ -119,18 +119,18 @@ public class QuotationService {
         quotation.setTotalAmount(total);
     }
 
-    private void assertIsAssignedDesigner(Long designerId, Booking booking) {
-        if (booking.getDesigner() == null) {
-            throw new UnauthorizedActionException("This booking has no assigned designer yet");
+    private void assertIsAssignedProfessional(Long professionalId, Booking booking) {
+        if (booking.getProfessional() == null) {
+            throw new UnauthorizedActionException("This booking has no assigned professional yet");
         }
-        if (!booking.getDesigner().getId().equals(designerId)) {
-            throw new UnauthorizedActionException("Only the designer assigned to this booking can manage its quotation");
+        if (!booking.getProfessional().getId().equals(professionalId)) {
+            throw new UnauthorizedActionException("Only the professional assigned to this booking can manage its quotation");
         }
     }
 
     private void assertParticipant(Long userId, Booking booking) {
         boolean isParticipant = booking.getCustomer().getId().equals(userId)
-                || (booking.getDesigner() != null && booking.getDesigner().getId().equals(userId));
+                || (booking.getProfessional() != null && booking.getProfessional().getId().equals(userId));
         if (!isParticipant) {
             throw new UnauthorizedActionException("You do not have access to this quotation");
         }

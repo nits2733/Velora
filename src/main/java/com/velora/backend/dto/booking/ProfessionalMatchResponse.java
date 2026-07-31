@@ -4,8 +4,8 @@ import com.velora.backend.entity.AvailabilityStatus;
 
 import java.math.BigDecimal;
 
-public record DesignerMatchResponse(
-        Long designerId,
+public record ProfessionalMatchResponse(
+        Long professionalId,
         String fullName,
         String specialization,
         String city,

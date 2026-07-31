@@ -1,16 +1,17 @@
 package com.velora.backend.service;
 
-import com.velora.backend.dto.booking.DesignerMatchResponse;
+import com.velora.backend.dto.booking.ProfessionalMatchResponse;
 import com.velora.backend.entity.AvailabilityStatus;
 import com.velora.backend.entity.Booking;
 import com.velora.backend.entity.BookingStatus;
-import com.velora.backend.entity.Design;
-import com.velora.backend.entity.DesignerProfile;
+import com.velora.backend.entity.InteriorDesignDetails;
+import com.velora.backend.entity.PortfolioItem;
+import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
 import com.velora.backend.repository.BookingRepository;
-import com.velora.backend.repository.DesignRepository;
-import com.velora.backend.repository.DesignerProfileRepository;
+import com.velora.backend.repository.PortfolioItemRepository;
+import com.velora.backend.repository.ProfessionalProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,7 +24,7 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
-public class DesignerMatchingService {
+public class ProfessionalMatchingService {
 
     private static final int MAX_RESULTS = 10;
     private static final Set<BookingStatus> ACTIVE_STATUSES = Set.of(BookingStatus.PENDING, BookingStatus.CONFIRMED);
@@ -31,41 +32,41 @@ public class DesignerMatchingService {
     private static final BigDecimal BUDGET_FIT_RATIO = new BigDecimal("0.7");
 
     private final BookingRepository bookingRepository;
-    private final DesignerProfileRepository designerProfileRepository;
-    private final DesignRepository designRepository;
+    private final ProfessionalProfileRepository professionalProfileRepository;
+    private final PortfolioItemRepository portfolioItemRepository;
 
     @Transactional(readOnly = true)
-    public List<DesignerMatchResponse> recommend(Long bookingId) {
+    public List<ProfessionalMatchResponse> recommend(Long bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
 
         if (booking.getStatus() != BookingStatus.PENDING_ASSIGNMENT) {
-            throw new InvalidStateTransitionException("This booking is not awaiting designer assignment");
+            throw new InvalidStateTransitionException("This booking is not awaiting professional assignment");
         }
 
-        List<DesignerProfile> candidates = designerProfileRepository.findByAvailabilityStatus(AvailabilityStatus.AVAILABLE);
+        List<ProfessionalProfile> candidates = professionalProfileRepository.findByAvailabilityStatus(AvailabilityStatus.AVAILABLE);
 
         return candidates.stream()
                 .map(profile -> score(profile, booking))
-                .sorted(Comparator.comparingInt(DesignerMatchResponse::score).reversed()
-                        .thenComparingLong(match -> activeBookingCount(match.designerId())))
+                .sorted(Comparator.comparingInt(ProfessionalMatchResponse::score).reversed()
+                        .thenComparingLong(match -> activeBookingCount(match.professionalId())))
                 .limit(MAX_RESULTS)
                 .toList();
     }
 
-    private DesignerMatchResponse score(DesignerProfile profile, Booking booking) {
-        Long designerId = profile.getUser().getId();
+    private ProfessionalMatchResponse score(ProfessionalProfile profile, Booking booking) {
+        Long professionalId = profile.getUser().getId();
         int total = 0;
 
         total += specializationScore(profile, booking);
-        total += portfolioScore(designerId, booking);
+        total += portfolioScore(professionalId, booking);
         total += experienceScore(profile);
         total += locationScore(profile, booking);
         total += ratingScore(profile);
-        total += budgetScore(designerId, booking);
+        total += budgetScore(professionalId, booking);
 
-        return new DesignerMatchResponse(
-                designerId,
+        return new ProfessionalMatchResponse(
+                professionalId,
                 profile.getUser().getFullName(),
                 profile.getSpecialization(),
                 profile.getCity(),
@@ -77,7 +78,7 @@ public class DesignerMatchingService {
         );
     }
 
-    private int specializationScore(DesignerProfile profile, Booking booking) {
+    private int specializationScore(ProfessionalProfile profile, Booking booking) {
         String specialization = profile.getSpecialization();
         if (specialization == null || specialization.isBlank()) {
             return 0;
@@ -92,20 +93,20 @@ public class DesignerMatchingService {
         return (matchesCategory || matchesStyle) ? 30 : 0;
     }
 
-    private int portfolioScore(Long designerId, Booking booking) {
+    private int portfolioScore(Long professionalId, Booking booking) {
         int score = 0;
         if (booking.getCategory() != null
-                && designRepository.countByDesignerIdAndCategoryId(designerId, booking.getCategory().getId()) > 0) {
+                && portfolioItemRepository.countByProfessionalIdAndCategoryId(professionalId, booking.getCategory().getId()) > 0) {
             score += 10;
         }
         if (booking.getPreferredStyle() != null && !booking.getPreferredStyle().isBlank()
-                && designRepository.countByDesignerIdAndStyleTagIgnoreCase(designerId, booking.getPreferredStyle()) > 0) {
+                && portfolioItemRepository.countByProfessionalIdAndInteriorDesignDetailsStyleTagIgnoreCase(professionalId, booking.getPreferredStyle()) > 0) {
             score += 10;
         }
         return score;
     }
 
-    private int experienceScore(DesignerProfile profile) {
+    private int experienceScore(ProfessionalProfile profile) {
         Integer years = profile.getYearsExperience();
         if (years == null) {
             return 0;
@@ -114,27 +115,29 @@ public class DesignerMatchingService {
         return (int) Math.round(cappedYears / 10.0 * 15);
     }
 
-    private int locationScore(DesignerProfile profile, Booking booking) {
+    private int locationScore(ProfessionalProfile profile, Booking booking) {
         if (profile.getCity() == null || booking.getLocation() == null) {
             return 0;
         }
         return profile.getCity().equalsIgnoreCase(booking.getLocation()) ? 15 : 0;
     }
 
-    private int ratingScore(DesignerProfile profile) {
+    private int ratingScore(ProfessionalProfile profile) {
         BigDecimal rating = profile.getAverageRating() != null ? profile.getAverageRating() : NEUTRAL_RATING;
         return rating.multiply(new BigDecimal("15"))
                 .divide(new BigDecimal("5"), 0, RoundingMode.HALF_UP)
                 .intValue();
     }
 
-    private int budgetScore(Long designerId, Booking booking) {
+    private int budgetScore(Long professionalId, Booking booking) {
         if (booking.getBudget() == null) {
             return 0;
         }
-        List<Design> designs = designRepository.findByDesignerId(designerId);
-        List<BigDecimal> prices = designs.stream()
-                .map(Design::getPriceEstimate)
+        List<PortfolioItem> items = portfolioItemRepository.findByProfessionalId(professionalId);
+        List<BigDecimal> prices = items.stream()
+                .map(PortfolioItem::getInteriorDesignDetails)
+                .filter(details -> details != null)
+                .map(InteriorDesignDetails::getPriceEstimate)
                 .filter(price -> price != null)
                 .toList();
         if (prices.isEmpty()) {
@@ -146,7 +149,7 @@ public class DesignerMatchingService {
         return booking.getBudget().compareTo(affordableThreshold) >= 0 ? 5 : 0;
     }
 
-    private long activeBookingCount(Long designerId) {
-        return bookingRepository.countByDesignerIdAndStatusIn(designerId, ACTIVE_STATUSES);
+    private long activeBookingCount(Long professionalId) {
+        return bookingRepository.countByProfessionalIdAndStatusIn(professionalId, ACTIVE_STATUSES);
     }
 }

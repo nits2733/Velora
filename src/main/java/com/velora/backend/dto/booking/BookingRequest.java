@@ -1,5 +1,6 @@
 package com.velora.backend.dto.booking;
 
+import com.velora.backend.entity.RequestType;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;
@@ -9,15 +10,18 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * designerId is optional: present means the customer picked this designer directly;
- * absent means the customer wants Velora to assign one (booking starts in
- * PENDING_ASSIGNMENT until an admin assigns a designer). categoryId/preferredStyle/
- * budget/location are only meaningful on that assignment-request path - they feed
- * DesignerMatchingService's scoring and are otherwise unused.
+ * requestType distinguishes a Full Home Services project from a standalone
+ * Individual Service request - see BookingService.createBooking for the rules this
+ * drives. professionalId is optional: present means the customer picked this
+ * professional directly (FULL_HOME_PROJECT only); absent means the customer wants
+ * Velora to assign one (booking starts in PENDING_ASSIGNMENT until an admin assigns
+ * a professional). categoryId/preferredStyle/budget/location feed
+ * ProfessionalMatchingService's scoring and are required for INDIVIDUAL_SERVICE.
  */
 public record BookingRequest(
-        Long designerId,
-        Long designId,
+        @NotNull RequestType requestType,
+        Long professionalId,
+        Long portfolioItemId,
         @NotNull @Future Instant scheduledAt,
         @Size(max = 1000) String notes,
         Long categoryId,

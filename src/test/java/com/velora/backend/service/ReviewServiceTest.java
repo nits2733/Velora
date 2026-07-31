@@ -4,7 +4,7 @@ import com.velora.backend.dto.review.CreateReviewRequest;
 import com.velora.backend.dto.review.ReviewResponse;
 import com.velora.backend.entity.Booking;
 import com.velora.backend.entity.BookingStatus;
-import com.velora.backend.entity.DesignerProfile;
+import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.Review;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
@@ -13,7 +13,7 @@ import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.ReviewMapper;
 import com.velora.backend.repository.BookingRepository;
-import com.velora.backend.repository.DesignerProfileRepository;
+import com.velora.backend.repository.ProfessionalProfileRepository;
 import com.velora.backend.repository.ReviewRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,27 +38,27 @@ class ReviewServiceTest {
     @Mock
     private BookingRepository bookingRepository;
     @Mock
-    private DesignerProfileRepository designerProfileRepository;
+    private ProfessionalProfileRepository professionalProfileRepository;
 
     private final ReviewMapper reviewMapper = new ReviewMapper();
 
     private ReviewService reviewService;
 
     private User customer;
-    private User designer;
+    private User professional;
 
     @BeforeEach
     void setUp() {
-        reviewService = new ReviewService(reviewRepository, bookingRepository, designerProfileRepository, reviewMapper);
+        reviewService = new ReviewService(reviewRepository, bookingRepository, professionalProfileRepository, reviewMapper);
 
         customer = User.builder().id(1L).fullName("Cust").role(Role.CUSTOMER).build();
-        designer = User.builder().id(2L).fullName("Des").role(Role.DESIGNER).build();
+        professional = User.builder().id(2L).fullName("Pro").role(Role.PROFESSIONAL).build();
     }
 
     @Test
     void createReviewRejectsNonCompletedBooking() {
         Booking booking = Booking.builder()
-                .id(30L).customer(customer).designer(designer)
+                .id(30L).customer(customer).professional(professional)
                 .status(BookingStatus.CONFIRMED).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(30L)).thenReturn(Optional.of(booking));
 
@@ -71,7 +71,7 @@ class ReviewServiceTest {
     @Test
     void createReviewRejectsNonOwningCustomer() {
         Booking booking = Booking.builder()
-                .id(31L).customer(customer).designer(designer)
+                .id(31L).customer(customer).professional(professional)
                 .status(BookingStatus.COMPLETED).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(31L)).thenReturn(Optional.of(booking));
 
@@ -84,7 +84,7 @@ class ReviewServiceTest {
     @Test
     void createReviewRejectsDuplicateReview() {
         Booking booking = Booking.builder()
-                .id(32L).customer(customer).designer(designer)
+                .id(32L).customer(customer).professional(professional)
                 .status(BookingStatus.COMPLETED).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(32L)).thenReturn(Optional.of(booking));
         when(reviewRepository.existsByBookingId(32L)).thenReturn(true);
@@ -96,9 +96,9 @@ class ReviewServiceTest {
     }
 
     @Test
-    void createReviewRecomputesDesignerAverageRating() {
+    void createReviewRecomputesProfessionalAverageRating() {
         Booking booking = Booking.builder()
-                .id(33L).customer(customer).designer(designer)
+                .id(33L).customer(customer).professional(professional)
                 .status(BookingStatus.COMPLETED).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(33L)).thenReturn(Optional.of(booking));
         when(reviewRepository.existsByBookingId(33L)).thenReturn(false);
@@ -109,12 +109,12 @@ class ReviewServiceTest {
             return r;
         });
 
-        Review existingReview = Review.builder().id(400L).booking(booking).customer(customer).designer(designer).rating(4).build();
-        when(reviewRepository.findByDesignerId(2L)).thenReturn(List.of(existingReview,
-                Review.builder().id(500L).booking(booking).customer(customer).designer(designer).rating(5).build()));
+        Review existingReview = Review.builder().id(400L).booking(booking).customer(customer).professional(professional).rating(4).build();
+        when(reviewRepository.findByProfessionalId(2L)).thenReturn(List.of(existingReview,
+                Review.builder().id(500L).booking(booking).customer(customer).professional(professional).rating(5).build()));
 
-        DesignerProfile profile = DesignerProfile.builder().id(200L).user(designer).build();
-        when(designerProfileRepository.findByUserId(2L)).thenReturn(Optional.of(profile));
+        ProfessionalProfile profile = ProfessionalProfile.builder().id(200L).user(professional).build();
+        when(professionalProfileRepository.findByUserId(2L)).thenReturn(Optional.of(profile));
 
         CreateReviewRequest request = new CreateReviewRequest(5, "Excellent");
 

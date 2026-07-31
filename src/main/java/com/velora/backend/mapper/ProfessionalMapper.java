@@ -1,15 +1,15 @@
 package com.velora.backend.mapper;
 
-import com.velora.backend.dto.designer.DesignerPublicProfileResponse;
-import com.velora.backend.entity.DesignerProfile;
+import com.velora.backend.dto.professional.ProfessionalPublicProfileResponse;
+import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.User;
 import org.springframework.stereotype.Component;
 
 @Component
-public class DesignerMapper {
+public class ProfessionalMapper {
 
-    public DesignerPublicProfileResponse toPublicProfileResponse(User user, DesignerProfile profile) {
-        return new DesignerPublicProfileResponse(
+    public ProfessionalPublicProfileResponse toPublicProfileResponse(User user, ProfessionalProfile profile) {
+        return new ProfessionalPublicProfileResponse(
                 user.getId(),
                 user.getFullName(),
                 profile.getBio(),

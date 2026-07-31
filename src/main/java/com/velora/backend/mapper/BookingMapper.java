@@ -10,12 +10,13 @@ public class BookingMapper {
     public BookingResponse toResponse(Booking booking) {
         return new BookingResponse(
                 booking.getId(),
+                booking.getRequestType(),
                 booking.getCustomer().getId(),
                 booking.getCustomer().getFullName(),
-                booking.getDesigner() != null ? booking.getDesigner().getId() : null,
-                booking.getDesigner() != null ? booking.getDesigner().getFullName() : null,
-                booking.getDesign() != null ? booking.getDesign().getId() : null,
-                booking.getDesign() != null ? booking.getDesign().getTitle() : null,
+                booking.getProfessional() != null ? booking.getProfessional().getId() : null,
+                booking.getProfessional() != null ? booking.getProfessional().getFullName() : null,
+                booking.getPortfolioItem() != null ? booking.getPortfolioItem().getId() : null,
+                booking.getPortfolioItem() != null ? booking.getPortfolioItem().getTitle() : null,
                 booking.getScheduledAt(),
                 booking.getStatus(),
                 booking.getNotes(),

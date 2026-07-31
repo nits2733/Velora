@@ -5,8 +5,10 @@ import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.entity.Booking;
 import com.velora.backend.entity.BookingStatus;
 import com.velora.backend.entity.Category;
-import com.velora.backend.entity.Design;
+import com.velora.backend.entity.PortfolioItem;
+import com.velora.backend.entity.RequestType;
 import com.velora.backend.entity.Role;
+import com.velora.backend.entity.ServiceGroup;
 import com.velora.backend.entity.User;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
@@ -14,7 +16,7 @@ import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.BookingMapper;
 import com.velora.backend.repository.BookingRepository;
 import com.velora.backend.repository.CategoryRepository;
-import com.velora.backend.repository.DesignRepository;
+import com.velora.backend.repository.PortfolioItemRepository;
 import com.velora.backend.repository.UserRepository;
 import com.velora.backend.util.PageResponse;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +36,7 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
-    private final DesignRepository designRepository;
+    private final PortfolioItemRepository portfolioItemRepository;
     private final CategoryRepository categoryRepository;
     private final BookingMapper bookingMapper;
 
@@ -43,27 +45,37 @@ public class BookingService {
         User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + customerId));
 
-        if (request.designId() != null && request.designerId() == null) {
-            throw new IllegalArgumentException("designId requires an explicit designerId");
+        if (request.portfolioItemId() != null && request.professionalId() == null) {
+            throw new IllegalArgumentException("portfolioItemId requires an explicit professionalId");
         }
 
-        User designer = null;
-        Design design = null;
+        if (request.requestType() == RequestType.INDIVIDUAL_SERVICE) {
+            if (request.professionalId() != null) {
+                throw new IllegalArgumentException(
+                        "Individual service requests are assigned by Velora, not chosen directly");
+            }
+            if (request.categoryId() == null) {
+                throw new IllegalArgumentException("Individual service requests must specify a category");
+            }
+        }
 
-        if (request.designerId() != null) {
-            designer = userRepository.findById(request.designerId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Designer not found: " + request.designerId()));
+        User professional = null;
+        PortfolioItem portfolioItem = null;
 
-            if (designer.getRole() != Role.DESIGNER) {
-                throw new IllegalArgumentException("Selected user is not a designer");
+        if (request.professionalId() != null) {
+            professional = userRepository.findById(request.professionalId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Professional not found: " + request.professionalId()));
+
+            if (professional.getRole() != Role.PROFESSIONAL) {
+                throw new IllegalArgumentException("Selected user is not a professional");
             }
 
-            if (request.designId() != null) {
-                design = designRepository.findById(request.designId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Design not found: " + request.designId()));
+            if (request.portfolioItemId() != null) {
+                portfolioItem = portfolioItemRepository.findById(request.portfolioItemId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Portfolio item not found: " + request.portfolioItemId()));
 
-                if (!design.getDesigner().getId().equals(designer.getId())) {
-                    throw new IllegalArgumentException("The selected design does not belong to the selected designer");
+                if (!portfolioItem.getProfessional().getId().equals(professional.getId())) {
+                    throw new IllegalArgumentException("The selected portfolio item does not belong to the selected professional");
                 }
             }
         }
@@ -72,18 +84,26 @@ public class BookingService {
         if (request.categoryId() != null) {
             category = categoryRepository.findById(request.categoryId())
                     .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + request.categoryId()));
+
+            ServiceGroup expectedGroup = request.requestType() == RequestType.INDIVIDUAL_SERVICE
+                    ? ServiceGroup.INDIVIDUAL_SERVICE
+                    : ServiceGroup.HOME_PROJECT;
+            if (category.getServiceGroup() != expectedGroup) {
+                throw new IllegalArgumentException("Selected category does not match the request type");
+            }
         }
 
         Booking booking = Booking.builder()
                 .customer(customer)
-                .designer(designer)
-                .design(design)
+                .professional(professional)
+                .portfolioItem(portfolioItem)
                 .category(category)
+                .requestType(request.requestType())
                 .preferredStyle(request.preferredStyle())
                 .budget(request.budget())
                 .location(request.location())
                 .scheduledAt(request.scheduledAt())
-                .status(designer != null ? BookingStatus.PENDING : BookingStatus.PENDING_ASSIGNMENT)
+                .status(professional != null ? BookingStatus.PENDING : BookingStatus.PENDING_ASSIGNMENT)
                 .notes(request.notes())
                 .build();
 
@@ -91,29 +111,29 @@ public class BookingService {
     }
 
     @Transactional
-    public BookingResponse assignDesigner(Long bookingId, Long designerId) {
+    public BookingResponse assignProfessional(Long bookingId, Long professionalId) {
         Booking booking = findBooking(bookingId);
 
-        if (booking.getDesigner() != null || booking.getStatus() != BookingStatus.PENDING_ASSIGNMENT) {
-            throw new InvalidStateTransitionException("This booking is not awaiting designer assignment");
+        if (booking.getProfessional() != null || booking.getStatus() != BookingStatus.PENDING_ASSIGNMENT) {
+            throw new InvalidStateTransitionException("This booking is not awaiting professional assignment");
         }
 
-        User designer = userRepository.findById(designerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Designer not found: " + designerId));
+        User professional = userRepository.findById(professionalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Professional not found: " + professionalId));
 
-        if (designer.getRole() != Role.DESIGNER) {
-            throw new IllegalArgumentException("Selected user is not a designer");
+        if (professional.getRole() != Role.PROFESSIONAL) {
+            throw new IllegalArgumentException("Selected user is not a professional");
         }
 
-        booking.setDesigner(designer);
+        booking.setProfessional(professional);
         booking.setStatus(BookingStatus.PENDING);
         return bookingMapper.toResponse(bookingRepository.save(booking));
     }
 
     @Transactional(readOnly = true)
     public PageResponse<BookingResponse> getBookingsForUser(Long userId, Role role, Pageable pageable) {
-        Page<Booking> bookings = role == Role.DESIGNER
-                ? bookingRepository.findByDesignerId(userId, pageable)
+        Page<Booking> bookings = role == Role.PROFESSIONAL
+                ? bookingRepository.findByProfessionalId(userId, pageable)
                 : bookingRepository.findByCustomerId(userId, pageable);
 
         return PageResponse.from(bookings.map(bookingMapper::toResponse));
@@ -144,11 +164,11 @@ public class BookingService {
     }
 
     @Transactional
-    public BookingResponse updateStatus(Long designerId, Long bookingId, BookingStatus newStatus) {
+    public BookingResponse updateStatus(Long professionalId, Long bookingId, BookingStatus newStatus) {
         Booking booking = findBooking(bookingId);
 
-        if (booking.getDesigner() == null || !booking.getDesigner().getId().equals(designerId)) {
-            throw new UnauthorizedActionException("Only the assigned designer can update this booking's status");
+        if (booking.getProfessional() == null || !booking.getProfessional().getId().equals(professionalId)) {
+            throw new UnauthorizedActionException("Only the assigned professional can update this booking's status");
         }
 
         validateTransition(booking.getStatus(), newStatus);
@@ -172,7 +192,7 @@ public class BookingService {
 
     private void assertParticipant(Long userId, Booking booking) {
         boolean isParticipant = booking.getCustomer().getId().equals(userId)
-                || (booking.getDesigner() != null && booking.getDesigner().getId().equals(userId));
+                || (booking.getProfessional() != null && booking.getProfessional().getId().equals(userId));
         if (!isParticipant) {
             throw new UnauthorizedActionException("You do not have access to this booking");
         }

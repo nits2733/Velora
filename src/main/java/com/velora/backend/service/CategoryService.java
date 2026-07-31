@@ -1,7 +1,7 @@
 package com.velora.backend.service;
 
-import com.velora.backend.dto.design.CategoryResponse;
-import com.velora.backend.mapper.DesignMapper;
+import com.velora.backend.dto.portfolio.CategoryResponse;
+import com.velora.backend.mapper.PortfolioItemMapper;
 import com.velora.backend.repository.CategoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,12 +14,12 @@ import java.util.List;
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
-    private final DesignMapper designMapper;
+    private final PortfolioItemMapper portfolioItemMapper;
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> getAllCategories() {
         return categoryRepository.findAll().stream()
-                .map(designMapper::toCategoryResponse)
+                .map(portfolioItemMapper::toCategoryResponse)
                 .toList();
     }
 }

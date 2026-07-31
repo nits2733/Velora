@@ -2,12 +2,12 @@ package com.velora.backend.service;
 
 import com.velora.backend.dto.user.UpdateProfileRequest;
 import com.velora.backend.dto.user.UserProfileResponse;
-import com.velora.backend.entity.DesignerProfile;
+import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
 import com.velora.backend.exception.ResourceNotFoundException;
 import com.velora.backend.mapper.UserMapper;
-import com.velora.backend.repository.DesignerProfileRepository;
+import com.velora.backend.repository.ProfessionalProfileRepository;
 import com.velora.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,16 +18,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserRepository userRepository;
-    private final DesignerProfileRepository designerProfileRepository;
+    private final ProfessionalProfileRepository professionalProfileRepository;
     private final UserMapper userMapper;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(Long userId) {
         User user = findUser(userId);
-        DesignerProfile designerProfile = user.getRole() == Role.DESIGNER
-                ? designerProfileRepository.findByUserId(userId).orElse(null)
+        ProfessionalProfile professionalProfile = user.getRole() == Role.PROFESSIONAL
+                ? professionalProfileRepository.findByUserId(userId).orElse(null)
                 : null;
-        return userMapper.toProfileResponse(user, designerProfile);
+        return userMapper.toProfileResponse(user, professionalProfile);
     }
 
     @Transactional
@@ -42,30 +42,30 @@ public class UserService {
         }
         userRepository.save(user);
 
-        DesignerProfile designerProfile = null;
-        if (user.getRole() == Role.DESIGNER) {
-            designerProfile = designerProfileRepository.findByUserId(userId)
-                    .orElseGet(() -> DesignerProfile.builder().user(user).build());
+        ProfessionalProfile professionalProfile = null;
+        if (user.getRole() == Role.PROFESSIONAL) {
+            professionalProfile = professionalProfileRepository.findByUserId(userId)
+                    .orElseGet(() -> ProfessionalProfile.builder().user(user).build());
 
             if (request.bio() != null) {
-                designerProfile.setBio(request.bio());
+                professionalProfile.setBio(request.bio());
             }
             if (request.yearsExperience() != null) {
-                designerProfile.setYearsExperience(request.yearsExperience());
+                professionalProfile.setYearsExperience(request.yearsExperience());
             }
             if (request.specialization() != null) {
-                designerProfile.setSpecialization(request.specialization());
+                professionalProfile.setSpecialization(request.specialization());
             }
             if (request.city() != null) {
-                designerProfile.setCity(request.city());
+                professionalProfile.setCity(request.city());
             }
             if (request.availabilityStatus() != null) {
-                designerProfile.setAvailabilityStatus(request.availabilityStatus());
+                professionalProfile.setAvailabilityStatus(request.availabilityStatus());
             }
-            designerProfile = designerProfileRepository.save(designerProfile);
+            professionalProfile = professionalProfileRepository.save(professionalProfile);
         }
 
-        return userMapper.toProfileResponse(user, designerProfile);
+        return userMapper.toProfileResponse(user, professionalProfile);
     }
 
     private User findUser(Long userId) {

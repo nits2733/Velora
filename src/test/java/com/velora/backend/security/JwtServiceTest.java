@@ -24,12 +24,12 @@ class JwtServiceTest {
 
     @Test
     void generatesTokenThatExtractsSameEmailAndIsValid() {
-        UserPrincipal principal = new UserPrincipal(1L, "designer@velora.test", "hash", Role.DESIGNER);
+        UserPrincipal principal = new UserPrincipal(1L, "professional@velora.test", "hash", Role.PROFESSIONAL);
 
         String token = jwtService.generateToken(principal);
 
-        assertThat(jwtService.extractEmail(token)).isEqualTo("designer@velora.test");
-        assertThat(jwtService.isTokenValid(token, "designer@velora.test")).isTrue();
+        assertThat(jwtService.extractEmail(token)).isEqualTo("professional@velora.test");
+        assertThat(jwtService.isTokenValid(token, "professional@velora.test")).isTrue();
     }
 
     @Test

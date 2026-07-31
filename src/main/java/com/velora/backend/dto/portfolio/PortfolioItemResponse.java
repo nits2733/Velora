@@ -1,15 +1,15 @@
-package com.velora.backend.dto.design;
+package com.velora.backend.dto.portfolio;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
-public record DesignResponse(
+public record PortfolioItemResponse(
         Long id,
         String title,
         String description,
         CategoryResponse category,
-        Long designerId,
-        String designerName,
+        Long professionalId,
+        String professionalName,
         String coverImageUrl,
         BigDecimal priceEstimate,
         String styleTag,

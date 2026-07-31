@@ -44,7 +44,7 @@ class QuotationServiceTest {
     private QuotationService quotationService;
 
     private User customer;
-    private User designer;
+    private User professional;
     private Booking booking;
 
     @BeforeEach
@@ -52,14 +52,14 @@ class QuotationServiceTest {
         quotationService = new QuotationService(quotationRepository, bookingRepository, quotationMapper);
 
         customer = User.builder().id(1L).email("customer@velora.test").fullName("Cust").role(Role.CUSTOMER).build();
-        designer = User.builder().id(2L).email("designer@velora.test").fullName("Des").role(Role.DESIGNER).build();
+        professional = User.builder().id(2L).email("professional@velora.test").fullName("Pro").role(Role.PROFESSIONAL).build();
         booking = Booking.builder()
-                .id(10L).customer(customer).designer(designer)
+                .id(10L).customer(customer).professional(professional)
                 .status(BookingStatus.CONFIRMED).scheduledAt(Instant.now()).build();
     }
 
     @Test
-    void saveDraftRejectsNonAssignedDesigner() {
+    void saveDraftRejectsNonAssignedProfessional() {
         when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
 
         SaveQuotationRequest request = new SaveQuotationRequest(null, List.of());
@@ -176,9 +176,9 @@ class QuotationServiceTest {
     }
 
     @Test
-    void saveDraftRejectsBookingWithNoAssignedDesigner() {
+    void saveDraftRejectsBookingWithNoAssignedProfessional() {
         Booking unassigned = Booking.builder()
-                .id(20L).customer(customer).designer(null)
+                .id(20L).customer(customer).professional(null)
                 .status(BookingStatus.PENDING_ASSIGNMENT).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(20L)).thenReturn(Optional.of(unassigned));
 

@@ -6,7 +6,7 @@ import com.velora.backend.dto.auth.RegisterRequest;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
 import com.velora.backend.exception.DuplicateResourceException;
-import com.velora.backend.repository.DesignerProfileRepository;
+import com.velora.backend.repository.ProfessionalProfileRepository;
 import com.velora.backend.repository.UserRepository;
 import com.velora.backend.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +29,7 @@ class AuthServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
-    private DesignerProfileRepository designerProfileRepository;
+    private ProfessionalProfileRepository professionalProfileRepository;
     @Mock
     private AuthenticationManager authenticationManager;
 
@@ -43,7 +43,7 @@ class AuthServiceTest {
         properties.setIssuer("velora-test");
         JwtService jwtService = new JwtService(properties);
 
-        authService = new AuthService(userRepository, designerProfileRepository,
+        authService = new AuthService(userRepository, professionalProfileRepository,
                 new BCryptPasswordEncoder(), jwtService, authenticationManager);
     }
 
@@ -58,7 +58,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void registerCustomerDoesNotCreateDesignerProfile() {
+    void registerCustomerDoesNotCreateProfessionalProfile() {
         when(userRepository.existsByEmail("new@velora.test")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(inv -> {
             User u = inv.getArgument(0);
@@ -73,23 +73,23 @@ class AuthServiceTest {
         assertThat(response.user().id()).isEqualTo(42L);
         assertThat(response.user().role()).isEqualTo(Role.CUSTOMER);
         assertThat(response.accessToken()).isNotBlank();
-        org.mockito.Mockito.verifyNoInteractions(designerProfileRepository);
+        org.mockito.Mockito.verifyNoInteractions(professionalProfileRepository);
     }
 
     @Test
-    void registerDesignerCreatesDesignerProfile() {
-        when(userRepository.existsByEmail("designer@velora.test")).thenReturn(false);
+    void registerProfessionalCreatesProfessionalProfile() {
+        when(userRepository.existsByEmail("professional@velora.test")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(inv -> {
             User u = inv.getArgument(0);
             u.setId(7L);
             return u;
         });
 
-        RegisterRequest request = new RegisterRequest("designer@velora.test", "password1", "New Designer", null, Role.DESIGNER);
+        RegisterRequest request = new RegisterRequest("professional@velora.test", "password1", "New Professional", null, Role.PROFESSIONAL);
 
         authService.register(request);
 
-        org.mockito.Mockito.verify(designerProfileRepository).save(any());
+        org.mockito.Mockito.verify(professionalProfileRepository).save(any());
     }
 
     @Test

@@ -1,6 +1,6 @@
 package com.velora.backend.controller;
 
-import com.velora.backend.dto.design.CategoryResponse;
+import com.velora.backend.dto.portfolio.CategoryResponse;
 import com.velora.backend.service.CategoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

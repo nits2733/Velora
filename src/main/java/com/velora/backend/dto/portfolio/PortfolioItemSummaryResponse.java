@@ -1,8 +1,8 @@
-package com.velora.backend.dto.design;
+package com.velora.backend.dto.portfolio;
 
 import java.math.BigDecimal;
 
-public record DesignSummaryResponse(
+public record PortfolioItemSummaryResponse(
         Long id,
         String title,
         String categoryName,

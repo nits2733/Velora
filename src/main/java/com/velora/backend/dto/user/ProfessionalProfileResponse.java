@@ -4,7 +4,7 @@ import com.velora.backend.entity.AvailabilityStatus;
 
 import java.math.BigDecimal;
 
-public record DesignerProfileResponse(
+public record ProfessionalProfileResponse(
         String bio,
         Integer yearsExperience,
         String specialization,

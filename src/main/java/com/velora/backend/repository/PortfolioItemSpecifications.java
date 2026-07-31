@@ -1,26 +1,27 @@
 package com.velora.backend.repository;
 
-import com.velora.backend.entity.Design;
+import com.velora.backend.entity.PortfolioItem;
+import jakarta.persistence.criteria.JoinType;
 import org.springframework.data.jpa.domain.Specification;
 
-public final class DesignSpecifications {
+public final class PortfolioItemSpecifications {
 
-    private DesignSpecifications() {
+    private PortfolioItemSpecifications() {
     }
 
-    public static Specification<Design> hasCategory(Long categoryId) {
+    public static Specification<PortfolioItem> hasCategory(Long categoryId) {
         return (root, query, cb) -> categoryId == null
                 ? null
                 : cb.equal(root.get("category").get("id"), categoryId);
     }
 
-    public static Specification<Design> hasStyle(String styleTag) {
+    public static Specification<PortfolioItem> hasStyle(String styleTag) {
         return (root, query, cb) -> (styleTag == null || styleTag.isBlank())
                 ? null
-                : cb.equal(cb.lower(root.get("styleTag")), styleTag.toLowerCase());
+                : cb.equal(cb.lower(root.join("interiorDesignDetails", JoinType.LEFT).get("styleTag")), styleTag.toLowerCase());
     }
 
-    public static Specification<Design> matchesSearch(String search) {
+    public static Specification<PortfolioItem> matchesSearch(String search) {
         return (root, query, cb) -> {
             if (search == null || search.isBlank()) {
                 return null;

@@ -19,7 +19,7 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("Velora Backend API")
                         .version("v1 (MVP 1)")
-                        .description("Auth, User, Design Catalog and Booking modules for the Velora interior design app."))
+                        .description("Auth, User, Portfolio Catalog and Booking modules for the Velora home services app."))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME))
                 .components(new Components().addSecuritySchemes(BEARER_SCHEME,
                         new SecurityScheme()

@@ -11,7 +11,7 @@ import java.util.Collection;
 public interface BookingRepository extends JpaRepository<Booking, Long> {
     Page<Booking> findByCustomerId(Long customerId, Pageable pageable);
 
-    Page<Booking> findByDesignerId(Long designerId, Pageable pageable);
+    Page<Booking> findByProfessionalId(Long professionalId, Pageable pageable);
 
-    long countByDesignerIdAndStatusIn(Long designerId, Collection<BookingStatus> statuses);
+    long countByProfessionalIdAndStatusIn(Long professionalId, Collection<BookingStatus> statuses);
 }

@@ -1,8 +1,8 @@
 package com.velora.backend.controller;
 
-import com.velora.backend.dto.design.DesignResponse;
-import com.velora.backend.dto.design.DesignSummaryResponse;
-import com.velora.backend.service.DesignService;
+import com.velora.backend.dto.portfolio.PortfolioItemResponse;
+import com.velora.backend.dto.portfolio.PortfolioItemSummaryResponse;
+import com.velora.backend.service.PortfolioItemService;
 import com.velora.backend.util.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -19,18 +19,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/designs")
+@RequestMapping("/api/portfolio")
 @RequiredArgsConstructor
-@Tag(name = "Designs", description = "Design catalog: browse, search, filter (public)")
-public class DesignController {
+@Tag(name = "Portfolio", description = "Professional work-sample catalog: browse, search, filter (public)")
+public class PortfolioItemController {
 
     private static final int MAX_PAGE_SIZE = 50;
 
-    private final DesignService designService;
+    private final PortfolioItemService portfolioItemService;
 
     @GetMapping
-    @Operation(summary = "Search/browse the design catalog with pagination and filters")
-    public ResponseEntity<PageResponse<DesignSummaryResponse>> search(
+    @Operation(summary = "Search/browse the portfolio catalog with pagination and filters")
+    public ResponseEntity<PageResponse<PortfolioItemSummaryResponse>> search(
             @RequestParam(required = false) Long category,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String style,
@@ -45,18 +45,19 @@ public class DesignController {
         Sort.Direction sortDirection = "asc".equalsIgnoreCase(direction) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(sortDirection, sanitizeSortField(sortBy)));
 
-        return ResponseEntity.ok(designService.search(category, search, style, pageable));
+        return ResponseEntity.ok(portfolioItemService.search(category, search, style, pageable));
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get design details by id")
-    public ResponseEntity<DesignResponse> getById(@PathVariable Long id) {
-        return ResponseEntity.ok(designService.getById(id));
+    @Operation(summary = "Get portfolio item details by id")
+    public ResponseEntity<PortfolioItemResponse> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(portfolioItemService.getById(id));
     }
 
     private String sanitizeSortField(String sortBy) {
         return switch (sortBy) {
-            case "priceEstimate", "title", "createdAt" -> sortBy;
+            case "priceEstimate" -> "interiorDesignDetails.priceEstimate";
+            case "title" -> "title";
             default -> "createdAt";
         };
     }

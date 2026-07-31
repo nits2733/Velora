@@ -44,8 +44,8 @@ public class Review {
     private User customer;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "designer_id", nullable = false)
-    private User designer;
+    @JoinColumn(name = "professional_id", nullable = false)
+    private User professional;
 
     @Column(nullable = false)
     private Integer rating;

@@ -24,14 +24,14 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
-@Table(name = "designer_profiles")
+@Table(name = "professional_profiles")
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class DesignerProfile {
+public class ProfessionalProfile {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

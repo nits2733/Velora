@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
 /**
  * All fields are optional - only non-null values are applied.
  * bio/yearsExperience/specialization/city/availabilityStatus only take effect for
- * DESIGNER accounts.
+ * PROFESSIONAL accounts.
  */
 public record UpdateProfileRequest(
         @Size(max = 150) String fullName,

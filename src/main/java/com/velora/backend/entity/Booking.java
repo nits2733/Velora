@@ -43,16 +43,20 @@ public class Booking {
     private User customer;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "designer_id")
-    private User designer;
+    @JoinColumn(name = "professional_id")
+    private User professional;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "design_id")
-    private Design design;
+    @JoinColumn(name = "portfolio_item_id")
+    private PortfolioItem portfolioItem;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private Category category;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "request_type", nullable = false)
+    private RequestType requestType;
 
     @Column(name = "preferred_style")
     private String preferredStyle;

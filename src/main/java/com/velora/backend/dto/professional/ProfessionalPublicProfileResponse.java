@@ -1,10 +1,10 @@
-package com.velora.backend.dto.designer;
+package com.velora.backend.dto.professional;
 
 import com.velora.backend.entity.AvailabilityStatus;
 
 import java.math.BigDecimal;
 
-public record DesignerPublicProfileResponse(
+public record ProfessionalPublicProfileResponse(
         Long id,
         String fullName,
         String bio,

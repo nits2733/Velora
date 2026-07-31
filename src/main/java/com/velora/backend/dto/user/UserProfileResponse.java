@@ -11,6 +11,6 @@ public record UserProfileResponse(
         String phone,
         Role role,
         Instant createdAt,
-        DesignerProfileResponse designerProfile
+        ProfessionalProfileResponse professionalProfile
 ) {
 }

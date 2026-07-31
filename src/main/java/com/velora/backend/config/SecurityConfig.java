@@ -32,9 +32,9 @@ import java.util.List;
 public class SecurityConfig {
 
     private static final String[] PUBLIC_GET_ENDPOINTS = {
-            "/api/designs/**",
+            "/api/portfolio/**",
             "/api/categories/**",
-            "/api/designers/**"
+            "/api/professionals/**"
     };
 
     private static final String[] PUBLIC_ENDPOINTS = {
