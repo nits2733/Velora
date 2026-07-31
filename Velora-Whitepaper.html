@@ -928,7 +928,16 @@ sequenceDiagram
       <div class="phase">Phase 2 &mdash; Execution &amp; Money</div>
       <h4>Project Management &amp; Payments</h4>
       <p style="font-size:0.9rem;color:var(--sub);">Multi-stage project tracking, milestone breakdowns, in-platform payment collection (Razorpay), material procurement.</p>
-      <div class="tags"><span class="tag">Milestones</span><span class="tag">Payments</span><span class="tag">Procurement</span></div>
+      <p style="font-size:0.9rem;color:var(--sub);margin-top:0.6rem;"><strong>Supervisor role:</strong> once a Full Home Project moves past quotation acceptance,
+      execution is handed to a dedicated <strong>supervisor</strong> &mdash; separate from the
+      designer who owns the creative/consultation side. The supervisor coordinates the
+      trade professionals on site, tracks milestones, and is the customer's point of
+      contact during execution. Same person can play both roles, but modeling them
+      separately means a designer's projects can draw from a shared pool of
+      supervisors. Likely implemented as an optional <code>Booking.supervisor</code>
+      reference (a <code>PROFESSIONAL</code>, not a new role) assigned once the booking
+      reaches <code>CONFIRMED</code>.</p>
+      <div class="tags"><span class="tag">Milestones</span><span class="tag">Payments</span><span class="tag">Procurement</span><span class="tag">Supervisor Role</span></div>
     </div>
     <div class="tl-item roadmap">
       <div class="phase">Phase 3 &mdash; Intelligence &amp; Scale</div>

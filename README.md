@@ -349,6 +349,15 @@ migration, is a new `V{n}__description.sql` file.
   scheduling calendar — `ProfessionalMatchingService` just filters on it. A future
   calendar can replace the stored flag with a computed one without changing how
   matching consumes it.
+- **Roadmap idea — supervisor role for Full Home Project execution.** Today a Full
+  Home Project has one professional end to end. Once project execution/milestones are
+  built, execution should hand off to a dedicated **supervisor** — separate from the
+  designer who owns the creative/consultation side — who coordinates the trade
+  professionals on site and is the customer's point of contact during execution. Same
+  person can play both roles, but modeling them separately lets a designer's projects
+  draw from a shared pool of supervisors. Likely shape: an optional
+  `Booking.supervisor` reference (still a `PROFESSIONAL`, not a new role) assigned once
+  the booking reaches `CONFIRMED`.
 
 **Professional matching score — deterministic, out of 100:**
 
