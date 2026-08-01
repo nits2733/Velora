@@ -38,6 +38,7 @@ it works here, with small examples.
 23. [API Documentation (Swagger/OpenAPI)](#23-api-documentation-swaggeropenapi)
 24. [Environment & Secrets Management](#24-environment--secrets-management)
 25. [Quick Reference: All Endpoints](#25-quick-reference-all-endpoints)
+26. [Appendix: End-to-End Flow Diagrams (No Code)](#26-appendix-end-to-end-flow-diagrams-no-code)
 
 ---
 
@@ -169,8 +170,7 @@ src/main/java/com/velora/backend/
 │   ├── JwtAuthFilter.java            # Runs on every request, checks the token
 │   ├── CustomUserDetailsService.java # Loads a User from the DB for Spring Security
 │   ├── UserPrincipal.java            # Adapts our User entity to Spring Security's UserDetails
-│   ├── RestAuthEntryPoint.java       # Returns JSON 401 (instead of a redirect/login page)
-│   └── RestAccessDeniedHandler.java  # Returns JSON 403
+│   └── RestSecurityErrorHandler.java # Returns JSON 401 / 403 for filter-chain failures
 ├── exception/                         # Custom exceptions + centralized error handling
 │   ├── GlobalExceptionHandler.java   # Catches exceptions app-wide, builds error JSON
 │   ├── ApiErrorResponse.java         # Shape of every error response
@@ -849,8 +849,7 @@ request  ──────────► │                                  
 | `JwtAuthFilter` | Runs once per request. Pulls the token out of the `Authorization` header, asks `JwtService` if it's valid, and if so tells Spring Security "this request is from this authenticated user." |
 | `CustomUserDetailsService` | Given an email, loads the matching `User` from the database and wraps it as a `UserPrincipal`. Used both during login (password check) and by the JWT filter (to reload user details on every request). |
 | `UserPrincipal` | Adapts our `User` entity to Spring Security's `UserDetails` interface, without polluting the entity itself with framework-specific code. |
-| `RestAuthEntryPoint` | Runs when an **unauthenticated** user hits a protected endpoint. Returns a clean JSON 401 instead of Spring Security's default HTML login page. |
-| `RestAccessDeniedHandler` | Runs when an **authenticated but unauthorized** user (wrong role) hits a restricted endpoint. Returns a clean JSON 403. |
+| `RestSecurityErrorHandler` | Implements both of Spring Security's error SPIs. As the `AuthenticationEntryPoint` it runs when an **unauthenticated** user hits a protected endpoint, returning a clean JSON 401 instead of Spring Security's default HTML login page. As the `AccessDeniedHandler` it runs when an **authenticated but unauthorized** user (wrong role) hits a restricted endpoint, returning a clean JSON 403. |
 
 **Why stateless (JWT) instead of sessions?**
 `SecurityConfig` sets `sessionCreationPolicy(SessionCreationPolicy.STATELESS)`. This
@@ -1052,7 +1051,7 @@ Step by step:
 1. **No `Authorization` header, or it doesn't start with `Bearer `?** → skip straight
    to the next filter. This request will be treated as **anonymous**. If the endpoint
    requires auth, it'll get rejected later by the authorization rules (→ 401 via
-   `RestAuthEntryPoint`). If the endpoint is public (e.g. `/api/portfolio`), it proceeds fine.
+   `RestSecurityErrorHandler`). If the endpoint is public (e.g. `/api/portfolio`), it proceeds fine.
 
 2. **Extract the email from the token's claims** (`JwtService.extractEmail` — reads
    the JWT's `subject` claim, which we set to the user's email at token creation time).
@@ -1179,7 +1178,7 @@ public List<GrantedAuthority> getAuthorities() {
 ```
 
 **What happens if the role check fails?** Spring Security throws
-`AccessDeniedException`, which is caught by `RestAccessDeniedHandler` (registered in
+`AccessDeniedException`, which is caught by `RestSecurityErrorHandler` (registered in
 `SecurityConfig` as the `accessDeniedHandler`) and turned into a clean JSON `403
 Forbidden` response — never Spring's default HTML error page.
 
@@ -2047,7 +2046,7 @@ on the DTO.
 **Two layers of 401/403 handling, and why both exist:** You'll notice 401/403 are
 produced in *two* different places — `GlobalExceptionHandler` (for exceptions thrown
 during normal request processing, e.g. bad login credentials) **and**
-`RestAuthEntryPoint`/`RestAccessDeniedHandler` (for failures that happen *inside the
+`RestSecurityErrorHandler` (for failures that happen *inside the
 security filter chain itself*, before the request ever reaches a controller — e.g. no
 token at all, or role check failure). Spring's exception-handling advice
 (`@RestControllerAdvice`) only intercepts exceptions from the MVC dispatch process; it
@@ -2174,6 +2173,811 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | GET | `/actuator/health` | No | — | Health check (used to confirm the app is up) |
 | GET | `/swagger-ui/index.html` | No | — | Interactive API documentation |
 | GET | `/v3/api-docs` | No | — | Raw OpenAPI JSON spec |
+
+---
+
+## 26. Appendix: End-to-End Flow Diagrams (No Code)
+
+Every flow above, redrawn as a decision tree with no class names, no annotations, and no
+Java — including the error branches. Useful for onboarding a non-backend reader, for
+reviewing the business rules without the framework noise, and as a checklist when
+changing one of these flows. Each diagram links back to the section that explains the
+same flow in code.
+
+### 26.1 Startup → [§3](#3-application-startup-flow)
+
+Configuration loads, the JWT secret is validated, Flyway migrates, JPA verifies the
+schema, security is wired, the server listens. Any failure aborts startup — nothing ever
+runs in a half-broken state.
+
+```
+App process starts
+        │
+        ▼
+Load config from .env / environment variables
+        │
+        ▼
+Validate JWT secret
+        │
+        ├── Missing or too short
+        │         │
+        │         ▼
+        │   Abort startup (fail fast, clear error)
+        │
+        ▼
+Connect to database
+        │
+        ▼
+Flyway: compare migration history vs. migration files
+        │
+        ▼
+Apply any pending migrations, in order
+        │
+        ▼
+JPA validates entity classes match actual DB schema
+        │
+        ├── Mismatch
+        │      │
+        │      ▼
+        │   Abort startup
+        │
+        ▼
+Wire up security rules
+  • Public vs. protected URLs
+  • CORS policy
+  • Password hashing strategy
+        │
+        ▼
+Start web server, begin listening
+        │
+        ▼
+Application ready to accept requests
+```
+
+### 26.2 Registration → [§10](#10-authentication-flow--register)
+
+Admin accounts can never be self-registered — that's a hard block, not a convention. A
+professional additionally gets an empty profile record created and linked at signup, so
+there's no separate "set up your professional profile" step later.
+
+```
+Client sends email, password, fullName, phone, role
+        │
+        ▼
+Is the requested role "admin"?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   400 Bad Request (admin accounts can't self-register)
+        │
+        ▼
+Validate input shape (format, length, required fields)
+        │
+        ├── Invalid
+        │      │
+        │      ▼
+        │   400 Bad Request (field-by-field errors)
+        │
+        ▼
+Normalize email (trim + lowercase)
+        │
+        ▼
+Does an account with this email already exist?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Hash the password
+        │
+        ▼
+Save new user record
+        │
+        ├── role == PROFESSIONAL
+        │         │
+        │         ▼
+        │   Create empty professional profile, linked to user
+        │   (availability defaults to "available")
+        │
+        ▼
+Generate signed JWT access token
+        │
+        ▼
+201 Created + access token + basic user info
+```
+
+### 26.3 Login → [§11](#11-authentication-flow--login)
+
+The rejection message is deliberately vague about *which* half was wrong — saying "no
+such email" would let an attacker enumerate which addresses have accounts.
+
+```
+Client sends email + password
+        │
+        ▼
+Normalize email
+        │
+        ▼
+Look up account by email
+        │
+        ▼
+Compare submitted password against stored hash
+        │
+        ├── No account found, or password doesn't match
+        │         │
+        │         ▼
+        │   401 "Invalid email or password"
+        │   (deliberately vague — never says which part was wrong)
+        │
+        ▼
+Password matches
+        │
+        ▼
+Generate a fresh signed JWT access token
+        │
+        ▼
+200 OK + access token + basic user info
+        │
+        ▼
+Client stores token, attaches it to future requests
+```
+
+### 26.4 Authenticated Request → [§12](#12-how-a-protected-request-is-authenticated-jwt-filter), [§13](#13-authorization--roles-and-preauthorize)
+
+Runs on every single request. A bad token is never an error by itself — it just leaves
+the request anonymous, and the authorization rules decide whether that's fatal. The user
+is reloaded from the database on every request, so a deleted account or a changed role
+takes effect immediately rather than when the token eventually expires.
+
+```
+Client sends request
+        │
+        ▼
+Read Authorization header
+        │
+        ├── Missing or invalid format
+        │         │
+        │         ▼
+        │   Treat as Anonymous
+        │
+        ▼
+Extract Bearer token
+        │
+        ▼
+Read email from JWT
+        │
+        ▼
+Load latest user from database
+        │
+        ▼
+Validate:
+  • Signature
+  • Expiry
+  • User exists
+  • Email matches
+        │
+   ┌────┴────┐
+   │         │
+ Invalid   Valid
+   │         │
+   ▼         ▼
+Anonymous  Authenticated User
+             │
+             ▼
+Check endpoint security
+             │
+     ┌───────┴────────┐
+     │                │
+ Public          Login Required
+     │                │
+     ▼                ▼
+Allow         Authenticated?
+                    │
+            ┌───────┴────────┐
+            │                │
+           No               Yes
+            │                │
+            ▼                ▼
+     401 Unauthorized   Check Role
+                              │
+                     ┌────────┴────────┐
+                     │                 │
+                Wrong Role       Correct Role
+                     │                 │
+                     ▼                 ▼
+             403 Forbidden      Controller Executes
+```
+
+### 26.5 General Request Lifecycle → [§14](#14-full-request-lifecycle-controller--service--repository--db)
+
+The shape every feature request follows. Shape validation happens before the database is
+ever touched; data-dependent rules (ownership, existence, uniqueness) happen one layer
+deeper.
+
+```
+Request arrives
+        │
+        ▼
+Security checkpoint (if endpoint is protected — see 26.4)
+        │
+        ▼
+Read input: path variables / query params / JSON body
+        │
+        ▼
+Validate input shape
+        │
+        ├── Invalid
+        │      │
+        │      ▼
+        │   400 Bad Request (detailed field errors)
+        │
+        ▼
+Hand off to business logic layer, with caller identity
+        │
+        ▼
+Business logic:
+  • Fetch needed records
+  • Apply ownership / status / role / uniqueness rules
+        │
+        ├── Rule violated
+        │      │
+        │      ▼
+        │   Specific error (404 / 403 / 409 / ...)
+        │
+        ▼
+Perform the change, or read the data
+        │
+        ▼
+Map entity/entities → response DTO
+  (internal-only fields like password hashes never included)
+        │
+        ▼
+Return response with appropriate status code
+```
+
+### 26.6 Portfolio Catalog Browsing → [§15](#15-feature-walkthrough-portfolio-catalog-searchfilterpagination)
+
+Fully public. Every filter is optional and independently applied. Style and price exist
+only on interior-design items — a painter's or plumber's item omits those fields
+entirely rather than showing them empty.
+
+```
+Client requests GET /api/portfolio
+ (optional: category, search, style, page, size, sortBy, direction)
+        │
+        ▼
+Clamp page size to the allowed maximum
+        │
+        ▼
+Whitelist the sort field (unknown field → falls back to default;
+ "priceEstimate" resolves through the optional interior-design details)
+        │
+        ▼
+Build filters — only for parameters actually supplied
+        │
+        ├── category given → filter by category
+        ├── search given   → filter by title/description match
+        ├── style given    → filter by style tag (interior-design items only)
+        │      (any combination, or none at all)
+        │
+        ▼
+Run one combined query, plus a total-count query
+        │
+        ▼
+Map each result to a lightweight summary (card-sized fields;
+ price/style included only if the item has interior-design details)
+        │
+        ▼
+Wrap results in a page envelope (content + paging metadata)
+        │
+        ▼
+200 OK
+
+
+Client requests GET /api/portfolio/{id}
+        │
+        ▼
+Look up portfolio item by id
+        │
+        ├── Not found
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Map to full detail response (description, category, professional,
+ plus style/price if this item has interior-design details)
+        │
+        ▼
+200 OK
+
+
+Client requests GET /api/professionals/{id}  (public, no token needed)
+        │
+        ▼
+Look up user by id
+        │
+        ├── Not found, or not actually a professional account
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Load that professional's profile (bio, experience, specialization,
+city, availability, aggregate rating)
+        │
+        ▼
+200 OK
+```
+
+### 26.7 Booking → [§16](#16-feature-walkthrough-bookings-state-machine)
+
+The request type decides which rules apply: Individual Service work is always assigned by
+Velora (naming a professional is rejected, not ignored), while Full Home Services allows
+a direct pick. Both converge on the same lifecycle once a professional is attached.
+
+```
+Customer requests a new booking
+ (requestType: FULL_HOME_PROJECT or INDIVIDUAL_SERVICE, scheduledAt, optional notes,
+  and either:
+   professionalId (+ optional portfolioItemId)   — direct pick, FULL_HOME_PROJECT only
+   or categoryId/preferredStyle/budget/location   — let Velora choose)
+        │
+        ▼
+Is requestType == INDIVIDUAL_SERVICE?
+        │
+        ├── Yes → was a professionalId given?
+        │              │
+        │              ├── Yes → 400 Bad Request
+        │              │         (Velora always assigns Individual Service work)
+        │              ▼
+        │         Was a categoryId given?
+        │              │
+        │              ├── No → 400 Bad Request (category required)
+        │              ▼
+        │         Does the category belong to the INDIVIDUAL_SERVICE group?
+        │              │
+        │              ├── No → 400 Bad Request
+        │              ▼
+        │         Create booking, status PENDING_ASSIGNMENT
+        │
+        ▼
+Was a specific portfolioItem given without naming its professional?
+        │
+        ├── Yes → 400 Bad Request
+        │
+        ▼
+Was a professionalId given?
+        │
+        ├── Yes → is that user actually a PROFESSIONAL?
+        │              │
+        │              ├── No → 400 Bad Request
+        │              ▼
+        │         Does the optional portfolio item belong to that professional?
+        │              │
+        │              ├── No → 400 Bad Request
+        │              ▼
+        │         Does the category (if any) belong to the HOME_PROJECT group?
+        │              │
+        │              ├── No → 400 Bad Request
+        │              ▼
+        │         Create booking, status PENDING (professional attached)
+        │
+        ├── No →  Create booking, status PENDING_ASSIGNMENT (no professional yet)
+        │
+        ▼
+201 Created
+
+
+Booking action requested (view / cancel / update status)
+        │
+        ▼
+Load booking by id
+        │
+        ├── Not found
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Is the requester an allowed participant?
+ • view      → must be the customer OR the assigned professional (if any)
+ • cancel    → must be THE customer on it
+ • status    → must be THE assigned professional (booking must have one)
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+(For cancel/status) Is this transition allowed from the current status?
+  PENDING_ASSIGNMENT → nothing directly (must be assigned first)
+  PENDING            → CONFIRMED or CANCELLED
+  CONFIRMED          → COMPLETED or CANCELLED
+  CANCELLED / COMPLETED → nothing (final)
+        │
+        ├── Not allowed
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Apply the change
+        │
+        ▼
+200 OK
+```
+
+### 26.8 Professional Assignment & Matching → [§17](#17-feature-walkthrough-professional-assignment--matching)
+
+Scoring is a recommendation, never an automatic assignment — an admin still decides.
+Unavailable professionals are excluded before scoring, and the same 100-point formula
+applies to every trade.
+
+```
+Admin requests rankings for a booking
+        │
+        ▼
+Is this booking currently PENDING_ASSIGNMENT?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Load every professional currently marked AVAILABLE
+        │
+        ▼
+Score each one against the booking's stated preferences:
+  • specialization / category / style match           (30)
+  • their own portfolio has relevant category work      (10)
+  • their own portfolio has relevant style work          (10, interior-design items only)
+  • years of experience (capped)                        (15)
+  • project location matches their city                 (15)
+  • aggregate rating (unrated professionals neutral)     (15)
+  • budget realistically fits their typical pricing       (5, interior-design portfolio only)
+        │
+        ▼
+Sort highest score first
+ (tie → prefer whoever has fewer active bookings right now)
+        │
+        ▼
+Return ranked list to the admin — nothing assigned yet
+        │
+        ▼
+Admin picks one candidate
+        │
+        ▼
+Assign that professional to the booking
+ (booking rejoins the normal lifecycle — same as a direct pick)
+        │
+        ▼
+200 OK
+```
+
+### 26.9 Quotation → [§18](#18-feature-walkthrough-quotations-post-consultation-estimate)
+
+A booking never carries a price; the quotation does. The total is always recomputed from
+the line items, never accepted from the client, and a sent quotation is frozen — there's
+no unsend or revise step in this version.
+
+```
+Professional builds a quotation for a booking
+ (description + amount per line item, optionally quantity/unit/unit price too)
+        │
+        ▼
+Is the requester the professional assigned to this booking?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+Has this quotation already been sent, accepted, or rejected?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   409 Conflict (can no longer be edited)
+        │
+        ▼
+Replace the entire line-item list with what was just submitted
+        │
+        ▼
+Recalculate the total from the line items (never trusted from the client)
+        │
+        ▼
+200 OK — saved as DRAFT
+
+
+Professional sends the quotation to the customer
+        │
+        ▼
+Is it currently a draft?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Does it have at least one line item?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   400 Bad Request
+        │
+        ▼
+Mark as SENT
+        │
+        ▼
+200 OK
+
+
+Customer accepts or rejects the quotation
+        │
+        ▼
+Is the requester the customer on this booking?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+Is the quotation currently SENT?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Mark as ACCEPTED or REJECTED (final either way)
+        │
+        ▼
+200 OK
+```
+
+### 26.10 Review & Rating → [§19](#19-feature-walkthrough-reviews--ratings)
+
+One review per booking, ever, and only after completion. Saving one immediately
+recomputes the professional's aggregate from *all* their reviews — the same number the
+public profile shows and the matching formula scores against.
+
+```
+Customer submits a review for a booking
+ (1-5 rating, optional comment)
+        │
+        ▼
+Is the requester the customer who made this booking?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden
+        │
+        ▼
+Is the booking's status COMPLETED?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Has this booking already been reviewed?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   409 Conflict
+        │
+        ▼
+Save the review
+        │
+        ▼
+Reload every review this professional has ever received
+        │
+        ▼
+Recompute their average rating and review count
+        │
+        ▼
+Save the updated aggregate onto the professional's profile
+ (this is what the public profile shows, and what
+  professional-matching scores against going forward)
+        │
+        ▼
+201 Created
+```
+
+### 26.11 Profile → [§20](#20-feature-walkthrough-user-profile-role-conditional-data)
+
+Always the caller's own profile — identity comes from the token, never from input.
+Professional-only fields sent by a customer are silently ignored, and rating/review count
+are read-only here; only the review flow ever changes them.
+
+```
+GET /api/users/profile
+        │
+        ▼
+Load current user (identity taken from the token, never from input)
+        │
+        ▼
+Is role == PROFESSIONAL?
+        │
+        ├── Yes → also load professional profile record
+        │
+        ▼
+Build response
+ (professionalProfile section included only for professionals)
+        │
+        ▼
+200 OK
+
+
+PUT /api/users/profile (only the fields the client wants to change)
+        │
+        ▼
+Apply basic fields if present (fullName, phone)
+        │
+        ▼
+Is role == PROFESSIONAL?
+        │
+        ├── No  → any professional-specific fields sent are silently ignored
+        │
+        ├── Yes → load professional profile, or create one if it doesn't exist yet
+        │             │
+        │             ▼
+        │        Apply any supplied professional fields
+        │        (bio, yearsExperience, specialization, city, availabilityStatus)
+        │
+        ▼
+Save changes
+        │
+        ▼
+200 OK + updated profile
+```
+
+### 26.12 Validation → [§21](#21-validation-flow)
+
+Every failing field is reported at once, not just the first, so a client can fix
+everything in one pass. This layer only inspects the shape of the data — it knows nothing
+about what's in the database.
+
+```
+Request body received
+        │
+        ▼
+Run field-level checks
+  • required / non-empty
+  • correct format (e.g. email)
+  • length within allowed range
+  • value within allowed range
+  • pattern match (e.g. password complexity)
+        │
+        ├── One or more checks fail
+        │         │
+        │         ▼
+        │   Collect EVERY failing field (not just the first)
+        │         │
+        │         ▼
+        │   400 Bad Request + full list of field errors
+        │
+        ▼
+All checks pass
+        │
+        ▼
+Continue to business logic
+ (data-dependent rules — uniqueness, ownership, existence, service-group match —
+  are checked there, not at this stage)
+```
+
+### 26.13 Error Handling → [§22](#22-exception-handling-flow)
+
+One error shape for the entire API. Failures caught in the security filter chain and
+failures raised deep in business logic are deliberately indistinguishable from the
+outside.
+
+```
+Something goes wrong, anywhere in the system
+        │
+        ▼
+Caught by one central error handler
+        │
+        ▼
+Match against known situations
+        │
+        ├── Record doesn't exist          → 404 Not Found
+        ├── Duplicate data (e.g. email)   → 409 Conflict
+        ├── Not your resource             → 403 Forbidden
+        ├── Illegal state change          → 409 Conflict
+        ├── Wrong login credentials       → 401 Unauthorized
+        ├── Missing/invalid token         → 401 Unauthorized
+        ├── Logged in, wrong role         → 403 Forbidden
+        ├── Malformed input               → 400 Bad Request + field list
+        ├── Anything unmapped/unexpected  → 500 Internal Error (generic message)
+        │
+        ▼
+Build the one standard error shape
+ (timestamp, status, error label, message, path, fieldErrors)
+        │
+        ▼
+Send to client
+ (looks identical whether caught at the security checkpoint
+  or deep inside business logic)
+```
+
+### 26.14 Documentation → [§23](#23-api-documentation-swaggeropenapi)
+
+Generated from the real code, so it can't drift from what the API actually does. The docs
+pages are public; calling protected endpoints through them still needs a real token.
+
+```
+Developer opens the API documentation page
+        │
+        ▼
+Browse the auto-generated list of endpoints
+ (input shape, response shape, error cases — for each one)
+        │
+        ▼
+Log in through the documentation page itself
+        │
+        ▼
+Copy the returned access token
+        │
+        ▼
+Paste it into the page's "Authorize" step
+        │
+        ▼
+Every subsequent "try it out" call
+ automatically includes that token
+        │
+        ▼
+Protected endpoints can be tested directly from the browser
+```
+
+### 26.15 Environment & Configuration → [§24](#24-environment--secrets-management)
+
+Nothing sensitive is ever written into the codebase — it all arrives from outside, so the
+same build runs anywhere. The `local` profile layers on dev-only conveniences and never
+affects other environments.
+
+```
+Application needs a configuration value
+        │
+        ▼
+Look for a matching environment variable
+        │
+        ├── Set (via real env var, or a local .env file)
+        │         │
+        │         ▼
+        │   Use that value
+        │
+        ├── Not set
+        │         │
+        │         ▼
+        │   Fall back to a built-in default, if one exists
+        │
+        ▼
+Is the "local" development profile active?
+        │
+        ├── Yes
+        │      │
+        │      ▼
+        │   Layer on dev-only defaults (e.g. placeholder JWT secret)
+        │   and much more detailed / verbose logging
+        │
+        ▼
+Final configuration is ready before startup continues
+```
 
 ---
 
