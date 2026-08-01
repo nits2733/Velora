@@ -264,6 +264,8 @@ All endpoints are prefixed `/api`. Protected endpoints require
 | GET | `/portfolio?category=&search=&style=&page=&size=&sortBy=&direction=` | public | Paginated/filterable portfolio catalog |
 | GET | `/portfolio/{id}` | public | Portfolio item detail |
 | POST | `/portfolio` | PROFESSIONAL | Upload a new portfolio item under the caller's own account; `styleTag`/`priceEstimate` are optional — supplying either creates the item's `InteriorDesignDetails` satellite, omitting both leaves it a plain generic item |
+| PUT | `/portfolio/{id}` | PROFESSIONAL (owner) | Replace one of your own items — full replacement, not a patch; omitting both `styleTag` and `priceEstimate` drops an existing `InteriorDesignDetails` satellite |
+| DELETE | `/portfolio/{id}` | PROFESSIONAL (owner) | Delete one of your own items → `204`; refused with `409` while any booking still references it |
 </details>
 
 <details open>

@@ -1,8 +1,8 @@
 package com.velora.backend.controller;
 
-import com.velora.backend.dto.portfolio.CreatePortfolioItemRequest;
 import com.velora.backend.dto.portfolio.PortfolioItemResponse;
 import com.velora.backend.dto.portfolio.PortfolioItemSummaryResponse;
+import com.velora.backend.dto.portfolio.SavePortfolioItemRequest;
 import com.velora.backend.security.UserPrincipal;
 import com.velora.backend.service.PortfolioItemService;
 import com.velora.backend.util.PageResponse;
@@ -18,9 +18,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -66,9 +68,28 @@ public class PortfolioItemController {
     @PreAuthorize("hasRole('PROFESSIONAL')")
     @Operation(summary = "Upload a new portfolio item (professional only)")
     public ResponseEntity<PortfolioItemResponse> create(@AuthenticationPrincipal UserPrincipal principal,
-                                                          @Valid @RequestBody CreatePortfolioItemRequest request) {
+                                                          @Valid @RequestBody SavePortfolioItemRequest request) {
         PortfolioItemResponse response = portfolioItemService.create(principal.getId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('PROFESSIONAL')")
+    @Operation(summary = "Replace one of your own portfolio items (professional only)")
+    public ResponseEntity<PortfolioItemResponse> update(@AuthenticationPrincipal UserPrincipal principal,
+                                                         @PathVariable Long id,
+                                                         @Valid @RequestBody SavePortfolioItemRequest request) {
+        return ResponseEntity.ok(portfolioItemService.update(principal.getId(), id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('PROFESSIONAL')")
+    @Operation(summary = "Delete one of your own portfolio items (professional only, "
+            + "blocked while a booking still references it)")
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal UserPrincipal principal,
+                                        @PathVariable Long id) {
+        portfolioItemService.delete(principal.getId(), id);
+        return ResponseEntity.noContent().build();
     }
 
     private String sanitizeSortField(String sortBy) {

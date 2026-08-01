@@ -1344,7 +1344,7 @@ feature, but isn't built yet. `"/api/professionals/**"` sits in
 `/api/categories/**` — same public-browsing intent.
 
 **Write path — upload:** `POST /api/portfolio`, `@PreAuthorize("hasRole('PROFESSIONAL')")`,
-takes a `CreatePortfolioItemRequest` (`title`, `description`, `categoryId`,
+takes a `SavePortfolioItemRequest` (`title`, `description`, `categoryId`,
 `coverImageUrl`, optional `styleTag`, optional `priceEstimate`). `PortfolioItemService.create`
 looks up the caller (from `UserPrincipal.getId()`, not a client-supplied id — a
 professional can only upload under their own account) and the category, builds the
@@ -1352,8 +1352,38 @@ professional can only upload under their own account) and the category, builds t
 `InteriorDesignDetails` built with `.portfolioItem(item)` set so the owning side of the
 `@OneToOne` is populated before save; `CascadeType.ALL` on `PortfolioItem.interiorDesignDetails`
 persists both rows in one `save()` call. Omitting both fields leaves a plain item with no
-satellite row at all — the same shape a seeded plumber/painter item already has. There is
-still no update or delete endpoint for portfolio items.
+satellite row at all — the same shape a seeded plumber/painter item already has.
+
+**Write path — edit:** `PUT /api/portfolio/{id}`, same role guard, same
+`SavePortfolioItemRequest` body. One request record serves both verbs because an update
+here is a **full replacement, not a patch** — every field is resent, so there is no
+"was this field omitted or deliberately cleared?" ambiguity to resolve. That's what makes
+the interior-design satellite correctable in both directions:
+
+| Sent | Existing satellite | Result |
+|---|---|---|
+| style and/or price | none | satellite attached |
+| style and/or price | exists | satellite updated in place |
+| neither | exists | satellite **deleted** (`orphanRemoval = true`) |
+| neither | none | stays a plain item |
+
+`PortfolioItemService.applyInteriorDesignDetails` is shared by `create` and `update`, so
+both paths resolve those four cases identically.
+
+**Write path — delete:** `DELETE /api/portfolio/{id}` → `204 No Content`, same role guard.
+The delete is a hard delete (the satellite goes with it via `CascadeType.ALL` +
+`orphanRemoval`), but it's **refused with `409 Conflict` while any booking still
+references the item** (`bookingRepository.existsByPortfolioItemId`). A booking records the
+work sample the customer was interested in; that reference is part of the booking's
+history, so it outranks the professional's wish to remove the item. The check is explicit
+rather than left to the database's foreign key so the caller gets a real explanation
+instead of a generic integrity-violation conflict.
+
+Both endpoints go through `PortfolioItemService.loadOwnItem`, which is where the
+ownership rule lives: unknown id → `404`, someone else's item → `403`
+(`UnauthorizedActionException`). Note this is ownership enforced in the *service*, on top
+of the role check `@PreAuthorize` already did in the controller — `hasRole('PROFESSIONAL')`
+only proves you're *a* professional, never that you're *this item's* professional.
 
 ---
 
@@ -2155,6 +2185,8 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | GET | `/api/portfolio` | No | — | Search/browse the portfolio catalog (paginated, filterable) |
 | GET | `/api/portfolio/{id}` | No | — | Get one portfolio item's full details |
 | POST | `/api/portfolio` | Yes | PROFESSIONAL | Upload a new portfolio item under the caller's own account |
+| PUT | `/api/portfolio/{id}` | Yes | PROFESSIONAL | Replace one of your own portfolio items (full replacement, not a patch) |
+| DELETE | `/api/portfolio/{id}` | Yes | PROFESSIONAL | Delete one of your own portfolio items (blocked while a booking references it) |
 | GET | `/api/categories` | No | — | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
 | GET | `/api/professionals/{id}` | No | — | Get one professional's public profile (bio, experience, availability, rating) |
 | POST | `/api/bookings` | Yes | CUSTOMER | Book a Full Home Services project (chosen professional, or none — assignment-requested) or an Individual Service request (always assignment-requested) |
@@ -2508,6 +2540,54 @@ Look up user by id
         ▼
 Load that professional's profile (bio, experience, specialization,
 city, availability, aggregate rating)
+        │
+        ▼
+200 OK
+
+
+Professional edits or deletes one of their items
+ (PUT /api/portfolio/{id} — full replacement, or DELETE /api/portfolio/{id})
+        │
+        ▼
+Look up portfolio item by id
+        │
+        ├── Not found
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Is the caller the professional who owns this item?
+        │
+        ├── No
+        │      │
+        │      ▼
+        │   403 Forbidden (being a professional isn't enough — must be THIS item's)
+        │
+        ▼
+   ┌────┴─────┐
+   │          │
+ Edit       Delete
+   │          │
+   │          ▼
+   │    Is any booking still pointing at this item?
+   │          │
+   │          ├── Yes → 409 Conflict (part of that booking's history)
+   │          ▼
+   │    Delete the item (interior-design details go with it)
+   │          │
+   │          ▼
+   │        204 No Content
+   ▼
+Overwrite every field with what was sent
+ (title, description, category, cover image)
+        │
+        ▼
+Interior-design details: style and/or price sent?
+        │
+        ├── Yes → attach if missing, otherwise update in place
+        │
+        ├── No  → drop the details row if it existed
         │
         ▼
 200 OK
