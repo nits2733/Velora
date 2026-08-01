@@ -1,8 +1,7 @@
 package com.velora.backend.config;
 
 import com.velora.backend.security.JwtAuthFilter;
-import com.velora.backend.security.RestAccessDeniedHandler;
-import com.velora.backend.security.RestAuthEntryPoint;
+import com.velora.backend.security.RestSecurityErrorHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,8 +47,7 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
-    private final RestAuthEntryPoint restAuthEntryPoint;
-    private final RestAccessDeniedHandler restAccessDeniedHandler;
+    private final RestSecurityErrorHandler restSecurityErrorHandler;
     private final CorsProperties corsProperties;
 
     @Bean
@@ -77,8 +75,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(eh -> eh
-                        .authenticationEntryPoint(restAuthEntryPoint)
-                        .accessDeniedHandler(restAccessDeniedHandler))
+                        .authenticationEntryPoint(restSecurityErrorHandler)
+                        .accessDeniedHandler(restSecurityErrorHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_ENDPOINTS).permitAll()
