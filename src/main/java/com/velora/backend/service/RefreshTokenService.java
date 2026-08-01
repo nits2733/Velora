@@ -6,7 +6,7 @@ import com.velora.backend.entity.User;
 import com.velora.backend.repository.RefreshTokenRepository;
 import com.velora.backend.security.SecureTokenGenerator;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.BadCredentialsException;
+import com.velora.backend.exception.AuthenticationFailedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,7 +49,7 @@ public class RefreshTokenService {
     public User consumeAndRotate(String rawToken) {
         RefreshToken token = refreshTokenRepository.findByTokenHash(tokenGenerator.hash(rawToken))
                 .filter(candidate -> candidate.isUsable(Instant.now()))
-                .orElseThrow(() -> new BadCredentialsException("Invalid or expired refresh token"));
+                .orElseThrow(() -> new AuthenticationFailedException("Invalid or expired refresh token"));
 
         token.setRevokedAt(Instant.now());
         refreshTokenRepository.save(token);

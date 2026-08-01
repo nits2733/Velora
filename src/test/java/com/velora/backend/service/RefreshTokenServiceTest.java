@@ -12,7 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.BadCredentialsException;
+import com.velora.backend.exception.AuthenticationFailedException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -90,7 +90,7 @@ class RefreshTokenServiceTest {
                 .thenReturn(Optional.of(stored));
 
         assertThatThrownBy(() -> refreshTokenService.consumeAndRotate(rawToken))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthenticationFailedException.class);
     }
 
     @Test
@@ -102,7 +102,7 @@ class RefreshTokenServiceTest {
                 .thenReturn(Optional.of(stored));
 
         assertThatThrownBy(() -> refreshTokenService.consumeAndRotate(rawToken))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthenticationFailedException.class);
     }
 
     @Test
@@ -110,7 +110,7 @@ class RefreshTokenServiceTest {
         when(refreshTokenRepository.findByTokenHash(any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> refreshTokenService.consumeAndRotate("never-issued"))
-                .isInstanceOf(BadCredentialsException.class)
+                .isInstanceOf(AuthenticationFailedException.class)
                 .hasMessage("Invalid or expired refresh token");
     }
 

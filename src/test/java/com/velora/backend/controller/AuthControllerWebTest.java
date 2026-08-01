@@ -4,6 +4,7 @@ import com.velora.backend.dto.auth.AuthResponse;
 import com.velora.backend.dto.auth.LoginRequest;
 import com.velora.backend.dto.auth.RegisterRequest;
 import com.velora.backend.entity.Role;
+import com.velora.backend.exception.AuthenticationFailedException;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.service.AuthService;
 import com.velora.backend.service.PasswordService;
@@ -124,9 +125,9 @@ class AuthControllerWebTest {
     }
 
     @Test
-    void anInvalidRefreshTokenIsUnauthorized() throws Exception {
+    void anInvalidRefreshTokenSaysSoRatherThanBlamingTheEmailAndPassword() throws Exception {
         when(authService.refresh("bad"))
-                .thenThrow(new BadCredentialsException("Invalid or expired refresh token"));
+                .thenThrow(new AuthenticationFailedException("Invalid or expired refresh token"));
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,7 +135,9 @@ class AuthControllerWebTest {
                                 {"refreshToken":"bad"}
                                 """))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("Invalid email or password"));
+                // The client has to tell "refresh me" apart from "log in again"; only
+                // login itself stays deliberately vague.
+                .andExpect(jsonPath("$.message").value("Invalid or expired refresh token"));
     }
 
     @Test

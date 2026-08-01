@@ -13,7 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.BadCredentialsException;
+import com.velora.backend.exception.AuthenticationFailedException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -124,7 +124,7 @@ class PasswordServiceTest {
                 .thenReturn(Optional.of(token));
 
         assertThatThrownBy(() -> passwordService.resetPassword(rawToken, "brandnew1"))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthenticationFailedException.class);
 
         verify(refreshTokenService, never()).revokeAllForUser(anyLong());
     }
@@ -138,7 +138,7 @@ class PasswordServiceTest {
                 .thenReturn(Optional.of(token));
 
         assertThatThrownBy(() -> passwordService.resetPassword(rawToken, "brandnew1"))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthenticationFailedException.class);
     }
 
     @Test
@@ -146,7 +146,7 @@ class PasswordServiceTest {
         when(userRepository.findById(42L)).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> passwordService.changePassword(42L, "wrongpass1", "brandnew1"))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthenticationFailedException.class);
 
         assertThat(passwordEncoder.matches("current123", user.getPasswordHash())).isTrue();
         verify(refreshTokenService, never()).revokeAllForUser(anyLong());

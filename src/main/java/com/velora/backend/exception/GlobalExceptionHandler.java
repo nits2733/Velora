@@ -39,9 +39,24 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, ex.getMessage(), req, null);
     }
 
+    /**
+     * Login only. The message is fixed and vague on purpose - saying which half was wrong
+     * would let an attacker discover which emails have accounts.
+     */
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ApiErrorResponse> handleBadCredentials(BadCredentialsException ex, HttpServletRequest req) {
         return build(HttpStatus.UNAUTHORIZED, "Invalid email or password", req, null);
+    }
+
+    /**
+     * Every other 401. Unlike login, these say what actually failed: the caller already
+     * holds whatever token is being rejected, so there's nothing to enumerate, and a
+     * client needs to tell "refresh me" apart from "make the user log in again".
+     */
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthenticationFailed(AuthenticationFailedException ex,
+                                                                        HttpServletRequest req) {
+        return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), req, null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

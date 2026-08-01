@@ -8,7 +8,7 @@ import com.velora.backend.repository.PasswordResetTokenRepository;
 import com.velora.backend.repository.UserRepository;
 import com.velora.backend.security.SecureTokenGenerator;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.BadCredentialsException;
+import com.velora.backend.exception.AuthenticationFailedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,7 +66,7 @@ public class PasswordService {
     public void resetPassword(String rawToken, String newPassword) {
         PasswordResetToken token = passwordResetTokenRepository.findByTokenHash(tokenGenerator.hash(rawToken))
                 .filter(candidate -> candidate.isUsable(Instant.now()))
-                .orElseThrow(() -> new BadCredentialsException("Invalid or expired password reset token"));
+                .orElseThrow(() -> new AuthenticationFailedException("Invalid or expired password reset token"));
 
         User user = token.getUser();
         user.setPasswordHash(passwordEncoder.encode(newPassword));
@@ -90,7 +90,7 @@ public class PasswordService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-            throw new BadCredentialsException("Current password is incorrect");
+            throw new AuthenticationFailedException("Current password is incorrect");
         }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
