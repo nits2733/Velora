@@ -115,7 +115,7 @@ src/main/java/com/velora/backend/
 │   ├── UserController.java          # /api/users/**
 │   ├── PortfolioItemController.java # /api/portfolio/**
 │   ├── CategoryController.java      # /api/categories/**
-│   ├── ProfessionalController.java  # /api/professionals/{id} (public profile)
+│   ├── ProfessionalController.java  # /api/professionals/** (public directory + profile)
 │   ├── BookingController.java       # /api/bookings/** (incl. /assign, /recommendations)
 │   ├── QuotationController.java     # /api/bookings/{bookingId}/quotation
 │   └── ReviewController.java        # /api/bookings/{bookingId}/review
@@ -1337,11 +1337,45 @@ User user = userRepository.findById(professionalId)
 The `.filter(...)` is doing double duty: a wrong id and a *right* id that just isn't a
 professional both end up `404 Not Found` — from the outside, "no such public
 professional profile" is the correct, single response either way; the caller doesn't
-need to know *why* it doesn't exist. This is deliberately just a single-profile lookup
-by id, not a searchable directory of every professional — that's a natural next
-feature, but isn't built yet. `"/api/professionals/**"` sits in
+need to know *why* it doesn't exist. `"/api/professionals/**"` sits in
 `SecurityConfig.PUBLIC_GET_ENDPOINTS` alongside `/api/portfolio/**` and
 `/api/categories/**` — same public-browsing intent.
+
+**The directory — `GET /api/professionals`:** the searchable list that feeds those
+single-profile lookups. Same machinery as the portfolio catalog, deliberately:
+`ProfessionalProfileSpecifications` mirrors `PortfolioItemSpecifications` (every filter
+returns `null` when its parameter is absent, so an unsupplied query parameter adds no
+predicate rather than a match-everything one), results come back in the same
+`PageResponse` envelope, and page size is capped at the same 50.
+
+| Parameter | Effect |
+|---|---|
+| `search` | free-text over the professional's name, specialization and bio |
+| `specialization` | substring match (`like`) — "kitchen" finds "Modular Kitchen" |
+| `city` | exact match, case-insensitive |
+| `availability` | `AVAILABLE` / `UNAVAILABLE` |
+| `minExperience` | at least this many years |
+| `minRating` | at least this average — **excludes unrated professionals**, since a null average cannot be claimed to clear any bar |
+| `sortBy` | `averageRating` (default, desc), `yearsExperience`, `fullName`, `createdAt` — anything else falls back to the default rather than erroring |
+
+Two details worth pinning:
+
+1. **`ProfessionalSummaryResponse.id` is the *user* id, not the profile row id.** The
+   directory queries `ProfessionalProfile` (that's where every filterable field lives),
+   but the id a caller gets back has to be the one that works in
+   `GET /api/professionals/{id}`, `POST /api/bookings` and admin assignment. Returning
+   `profile.getId()` would hand out an id nothing else in the API accepts.
+2. **`isProfessional()` is applied unconditionally**, not as an optional filter. A profile
+   row should only ever belong to a `PROFESSIONAL` account, but this endpoint is public
+   and unauthenticated, so the role is asserted rather than assumed — the same guard
+   `getPublicProfile` already applies to single lookups.
+
+One non-obvious security point, pinned by `PublicEndpointPatternTest`: the security rule
+is written `/api/professionals/**`, and the directory sits at the bare
+`/api/professionals` with no trailing segment. That works because `/**` matches *zero* or
+more segments — but it's the kind of assumption that fails silently as a `401` on a
+supposedly public endpoint, so it's asserted against Spring's real `PathPatternParser`
+rather than trusted.
 
 **Write path — upload:** `POST /api/portfolio`, `@PreAuthorize("hasRole('PROFESSIONAL')")`,
 takes a `SavePortfolioItemRequest` (`title`, `description`, `categoryId`,
@@ -2201,6 +2235,7 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | PUT | `/api/portfolio/{id}` | Yes | PROFESSIONAL | Replace one of your own portfolio items (full replacement, not a patch) |
 | DELETE | `/api/portfolio/{id}` | Yes | PROFESSIONAL | Delete one of your own portfolio items (blocked while a booking references it) |
 | GET | `/api/categories` | No | — | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
+| GET | `/api/professionals` | No | — | Search/browse the professional directory (paginated, filterable) |
 | GET | `/api/professionals/{id}` | No | — | Get one professional's public profile (bio, experience, availability, rating) |
 | POST | `/api/bookings` | Yes | CUSTOMER | Book a Full Home Services project (chosen professional, or none — assignment-requested) or an Individual Service request (always assignment-requested) |
 | GET | `/api/bookings` | Yes | — | List the current user's bookings (customer or professional view) |
@@ -2536,6 +2571,35 @@ Look up portfolio item by id
         ▼
 Map to full detail response (description, category, professional,
  plus style/price if this item has interior-design details)
+        │
+        ▼
+200 OK
+
+
+Client requests GET /api/professionals  (public, no token needed)
+ (optional: search, specialization, city, availability,
+  minExperience, minRating, page, size, sortBy, direction)
+        │
+        ▼
+Clamp page size, whitelist the sort field (unknown → highest-rated first)
+        │
+        ▼
+Always restrict to PROFESSIONAL accounts, then add only the filters supplied
+        │
+        ├── search given         → name / specialization / bio match
+        ├── specialization given → substring match
+        ├── city given           → exact match, case-insensitive
+        ├── availability given   → AVAILABLE or UNAVAILABLE
+        ├── minExperience given  → at least N years
+        ├── minRating given      → at least N average (unrated are excluded)
+        │      (any combination, or none at all)
+        │
+        ▼
+Map each result to a directory card (no bio; id is the USER id,
+ so it works in every other professional endpoint)
+        │
+        ▼
+Wrap results in a page envelope (content + paging metadata)
         │
         ▼
 200 OK

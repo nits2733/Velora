@@ -252,7 +252,8 @@ All endpoints are prefixed `/api`. Protected endpoints require
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/professionals/{id}` | Get one professional's public profile |
+| GET | `/professionals?search=&specialization=&city=&availability=&minExperience=&minRating=&page=&size=&sortBy=&direction=` | Searchable directory — paginated cards, highest-rated first by default; `minRating` excludes unrated professionals |
+| GET | `/professionals/{id}` | Get one professional's public profile (adds the bio) |
 </details>
 
 <details open>
