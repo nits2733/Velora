@@ -40,8 +40,14 @@ server:
 app:
   jwt:
     secret: ${JWT_SECRET:}
-    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+    # Short by design now that refresh tokens exist: an access token cannot be revoked,
+    # so its lifetime is the window a stolen one stays useful. The client refreshes.
+    expiration-ms: ${JWT_EXPIRATION_MS:900000}
     issuer: velora-backend
+  auth:
+    # Long-lived and revocable - this is what keeps a phone signed in between uses.
+    refresh-token-ttl: ${REFRESH_TOKEN_TTL:30d}
+    password-reset-ttl: ${PASSWORD_RESET_TTL:30m}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:19000,http://localhost:8081}
 

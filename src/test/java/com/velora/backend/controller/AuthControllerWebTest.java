@@ -6,6 +6,7 @@ import com.velora.backend.dto.auth.RegisterRequest;
 import com.velora.backend.entity.Role;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.service.AuthService;
+import com.velora.backend.service.PasswordService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -14,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static com.velora.backend.controller.WebLayerSupport.as;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -38,10 +40,13 @@ class AuthControllerWebTest {
     @MockBean
     private AuthService authService;
 
+    @MockBean
+    private PasswordService passwordService;
+
     @Test
     void registrationIsReachableWithoutAToken() throws Exception {
         when(authService.register(any(RegisterRequest.class)))
-                .thenReturn(AuthResponse.of("token", 1L, "new@velora.test", "New User", Role.CUSTOMER));
+                .thenReturn(AuthResponse.of("token", "refresh", 1L, "new@velora.test", "New User", Role.CUSTOMER));
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -100,6 +105,109 @@ class AuthControllerWebTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.message").value("Email already registered"));
+    }
+
+    @Test
+    void refreshIsPublicSinceTheRefreshTokenIsItselfTheCredential() throws Exception {
+        when(authService.refresh("some-refresh"))
+                .thenReturn(AuthResponse.of("new-access", "new-refresh", 1L,
+                        "new@velora.test", "New User", Role.CUSTOMER));
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"some-refresh"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("new-access"))
+                .andExpect(jsonPath("$.refreshToken").value("new-refresh"));
+    }
+
+    @Test
+    void anInvalidRefreshTokenIsUnauthorized() throws Exception {
+        when(authService.refresh("bad"))
+                .thenThrow(new BadCredentialsException("Invalid or expired refresh token"));
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"bad"}
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid email or password"));
+    }
+
+    @Test
+    void logoutIsPublicAndReturnsNoContent() throws Exception {
+        mockMvc.perform(post("/api/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"some-refresh"}
+                                """))
+                .andExpect(status().isNoContent());
+
+        org.mockito.Mockito.verify(authService).logout("some-refresh");
+    }
+
+    @Test
+    void logoutEverywhereRequiresAnAccessTokenUnlikeTheOtherAuthEndpoints() throws Exception {
+        mockMvc.perform(post("/api/auth/logout-all"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/auth/logout-all").with(as(42L, Role.CUSTOMER)))
+                .andExpect(status().isNoContent());
+
+        org.mockito.Mockito.verify(authService).logoutEverywhere(42L);
+    }
+
+    @Test
+    void changingAPasswordRequiresAnAccessToken() throws Exception {
+        mockMvc.perform(post("/api/auth/password/change")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"currentPassword":"current123","newPassword":"brandnew1"}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(passwordService);
+    }
+
+    @Test
+    void changingAPasswordUsesTheIdFromTheTokenNotTheBody() throws Exception {
+        mockMvc.perform(post("/api/auth/password/change")
+                        .with(as(42L, Role.CUSTOMER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"currentPassword":"current123","newPassword":"brandnew1"}
+                                """))
+                .andExpect(status().isNoContent());
+
+        org.mockito.Mockito.verify(passwordService).changePassword(42L, "current123", "brandnew1");
+    }
+
+    @Test
+    void forgotPasswordIsAcceptedForAnyEmailWhetherItExistsOrNot() throws Exception {
+        mockMvc.perform(post("/api/auth/password/forgot")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"nobody@velora.test"}
+                                """))
+                .andExpect(status().isAccepted());
+
+        org.mockito.Mockito.verify(passwordService).requestReset("nobody@velora.test");
+    }
+
+    @Test
+    void aResetStillEnforcesTheSamePasswordRulesAsRegistration() throws Exception {
+        mockMvc.perform(post("/api/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"token":"reset-token","newPassword":"onlyletters"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("newPassword"));
+
+        verifyNoInteractions(passwordService);
     }
 
     @Test

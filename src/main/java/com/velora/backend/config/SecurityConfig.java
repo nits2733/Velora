@@ -36,8 +36,20 @@ public class SecurityConfig {
             "/api/professionals/**"
     };
 
+    /**
+     * Listed one by one rather than as {@code /api/auth/**}: two endpoints under that
+     * prefix - logout-all and password/change - identify the caller by their access
+     * token, and a wildcard would have silently made them public the moment they were
+     * added. The endpoints below are public because each carries its own credential
+     * (a password, a refresh token, or a reset token).
+     */
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/api/auth/**",
+            "/api/auth/register",
+            "/api/auth/login",
+            "/api/auth/refresh",
+            "/api/auth/logout",
+            "/api/auth/password/forgot",
+            "/api/auth/password/reset",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

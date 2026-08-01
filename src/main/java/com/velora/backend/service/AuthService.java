@@ -27,6 +27,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
+    private final RefreshTokenService refreshTokenService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -57,10 +58,7 @@ public class AuthService {
             professionalProfileRepository.save(profile);
         }
 
-        UserPrincipal principal = UserPrincipal.fromEntity(user);
-        String token = jwtService.generateToken(principal);
-
-        return AuthResponse.of(token, user.getId(), user.getEmail(), user.getFullName(), user.getRole());
+        return issueSession(user);
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -72,9 +70,37 @@ public class AuthService {
         User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new IllegalStateException("User authenticated but not found: " + normalizedEmail));
 
-        UserPrincipal principal = UserPrincipal.fromEntity(user);
-        String token = jwtService.generateToken(principal);
+        return issueSession(user);
+    }
 
-        return AuthResponse.of(token, user.getId(), user.getEmail(), user.getFullName(), user.getRole());
+    /**
+     * Trades a refresh token for a new pair. The user is reloaded through the refresh
+     * token's own row, so a deleted account or a changed role takes effect at the next
+     * refresh rather than whenever the access token happens to expire.
+     */
+    @Transactional
+    public AuthResponse refresh(String refreshToken) {
+        User user = refreshTokenService.consumeAndRotate(refreshToken);
+        return issueSession(user);
+    }
+
+    /** Ends one session. Idempotent: an unknown or already-revoked token is still a success. */
+    @Transactional
+    public void logout(String refreshToken) {
+        refreshTokenService.revoke(refreshToken);
+    }
+
+    /** Ends every session for this user - the "log out on all my devices" case. */
+    @Transactional
+    public void logoutEverywhere(Long userId) {
+        refreshTokenService.revokeAllForUser(userId);
+    }
+
+    private AuthResponse issueSession(User user) {
+        String accessToken = jwtService.generateToken(UserPrincipal.fromEntity(user));
+        String refreshToken = refreshTokenService.issue(user);
+
+        return AuthResponse.of(accessToken, refreshToken,
+                user.getId(), user.getEmail(), user.getFullName(), user.getRole());
     }
 }

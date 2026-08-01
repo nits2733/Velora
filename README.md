@@ -240,13 +240,26 @@ work, so a painter's or plumber's item simply has no row there. See
 All endpoints are prefixed `/api`. Protected endpoints require
 `Authorization: Bearer <token>`.
 
-<details>
-<summary><b>🔐 Auth (public)</b></summary>
+<details open>
+<summary><b>🔐 Auth &amp; sessions</b></summary>
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/auth/register` | Register as CUSTOMER or PROFESSIONAL (ADMIN is rejected) |
-| POST | `/auth/login` | Login, returns a JWT |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/auth/register` | public | Register as CUSTOMER or PROFESSIONAL (ADMIN is rejected) → access + refresh token |
+| POST | `/auth/login` | public | Login → access + refresh token |
+| POST | `/auth/refresh` | public¹ | Exchange a refresh token for a **new pair** — the presented token is revoked (rotation) |
+| POST | `/auth/logout` | public¹ | End this session. Idempotent — an unknown or already-revoked token still returns `204` |
+| POST | `/auth/logout-all` | **token** | End every session for the current user |
+| POST | `/auth/password/forgot` | public | Request a reset token. Always `202`, even for unknown emails (no account enumeration) |
+| POST | `/auth/password/reset` | public¹ | Set a new password with a reset token. Single-use; revokes all sessions |
+| POST | `/auth/password/change` | **token** | Change your own password (current password required); revokes all sessions |
+
+¹ No `Authorization` header needed — the refresh/reset token in the body *is* the credential.
+
+**Token model:** the access token is a short-lived (15 min default) JWT and cannot be
+revoked; the refresh token is long-lived (30 days), opaque, stored only as a SHA-256
+digest, and revocable. Clients keep both, call `/auth/refresh` on a `401`, and re-login
+only if that fails too.
 </details>
 
 <details>
@@ -319,8 +332,15 @@ All endpoints are prefixed `/api`. Protected endpoints require
 ## ⚙️ Environment Variables
 
 See `.env.example` for the full list: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-`DB_POOL_SIZE`, `JWT_SECRET` (required, 32+ bytes), `JWT_EXPIRATION_MS`,
+`DB_POOL_SIZE`, `JWT_SECRET` (required, 32+ bytes), `JWT_EXPIRATION_MS` (access token,
+default 15m), `REFRESH_TOKEN_TTL` (default `30d`), `PASSWORD_RESET_TTL` (default `30m`),
 `CORS_ALLOWED_ORIGINS`, `PORT`.
+
+> ⚠️ **Password reset delivery is not wired up.** `PasswordResetNotifier` currently has
+> one implementation, `LoggingPasswordResetNotifier`, which writes the reset token to the
+> application log so the flow is usable in development. Before production, add a bean that
+> emails it — everything else about the flow (hashing, expiry, single use, session
+> revocation) is already in place and won't change.
 
 ## 🧬 Database Migrations
 
@@ -400,7 +420,7 @@ confirms**, never a silent auto-assignment.
 
 📄 [`IMPLEMENTATION_FLOW.md`](./IMPLEMENTATION_FLOW.md) — full code-level walkthrough of every layer
 &nbsp;•&nbsp;
-🧭 [Flow diagrams](./IMPLEMENTATION_FLOW.md#26-appendix-end-to-end-flow-diagrams-no-code) — every request flow as a no-code decision tree
+🧭 [Flow diagrams](./IMPLEMENTATION_FLOW.md#27-appendix-end-to-end-flow-diagrams-no-code) — every request flow as a no-code decision tree
 &nbsp;•&nbsp;
 📘 [`Velora-Whitepaper.html`](./Velora-Whitepaper.html) — product + architecture whitepaper (print-to-PDF)
 

@@ -32,6 +32,8 @@ class AuthServiceTest {
     private ProfessionalProfileRepository professionalProfileRepository;
     @Mock
     private AuthenticationManager authenticationManager;
+    @Mock
+    private RefreshTokenService refreshTokenService;
 
     private AuthService authService;
 
@@ -44,7 +46,7 @@ class AuthServiceTest {
         JwtService jwtService = new JwtService(properties);
 
         authService = new AuthService(userRepository, professionalProfileRepository,
-                new BCryptPasswordEncoder(), jwtService, authenticationManager);
+                new BCryptPasswordEncoder(), jwtService, authenticationManager, refreshTokenService);
     }
 
     @Test
@@ -101,5 +103,53 @@ class AuthServiceTest {
                 .hasMessageContaining("Cannot self-register as an admin");
 
         org.mockito.Mockito.verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void registeringIssuesARefreshTokenAlongsideTheAccessToken() {
+        when(userRepository.existsByEmail("new@velora.test")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(42L);
+            return u;
+        });
+        when(refreshTokenService.issue(any(User.class))).thenReturn("refresh-abc");
+
+        AuthResponse response = authService.register(
+                new RegisterRequest("new@velora.test", "password1", "New Customer", null, Role.CUSTOMER));
+
+        assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.refreshToken()).isEqualTo("refresh-abc");
+        assertThat(response.tokenType()).isEqualTo("Bearer");
+    }
+
+    @Test
+    void refreshingRotatesTheTokenAndReissuesBoth() {
+        User user = User.builder().id(42L).email("new@velora.test").fullName("New Customer")
+                .role(Role.CUSTOMER).build();
+        when(refreshTokenService.consumeAndRotate("old-refresh")).thenReturn(user);
+        when(refreshTokenService.issue(user)).thenReturn("new-refresh");
+
+        AuthResponse response = authService.refresh("old-refresh");
+
+        assertThat(response.refreshToken()).isEqualTo("new-refresh");
+        assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.user().id()).isEqualTo(42L);
+        org.mockito.Mockito.verify(refreshTokenService).consumeAndRotate("old-refresh");
+    }
+
+    @Test
+    void logoutRevokesOnlyThePresentedSession() {
+        authService.logout("some-refresh");
+
+        org.mockito.Mockito.verify(refreshTokenService).revoke("some-refresh");
+        org.mockito.Mockito.verify(refreshTokenService, org.mockito.Mockito.never()).revokeAllForUser(any());
+    }
+
+    @Test
+    void logoutEverywhereRevokesEverySessionForTheUser() {
+        authService.logoutEverywhere(42L);
+
+        org.mockito.Mockito.verify(refreshTokenService).revokeAllForUser(42L);
     }
 }

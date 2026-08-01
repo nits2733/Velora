@@ -38,7 +38,8 @@ it works here, with small examples.
 23. [API Documentation (Swagger/OpenAPI)](#23-api-documentation-swaggeropenapi)
 24. [Environment & Secrets Management](#24-environment--secrets-management)
 25. [Quick Reference: All Endpoints](#25-quick-reference-all-endpoints)
-26. [Appendix: End-to-End Flow Diagrams (No Code)](#26-appendix-end-to-end-flow-diagrams-no-code)
+26. [Sessions, Logout & Password Recovery](#26-sessions-logout--password-recovery)
+27. [Appendix: End-to-End Flow Diagrams (No Code)](#27-appendix-end-to-end-flow-diagrams-no-code)
 
 ---
 
@@ -108,6 +109,8 @@ src/main/java/com/velora/backend/
 ├── config/                          # App-wide configuration & settings classes
 │   ├── SecurityConfig.java          # Security rules, CORS, password encoder
 │   ├── JwtProperties.java           # Binds app.jwt.* properties, validates on startup
+│   ├── AuthProperties.java          # Binds app.auth.* - refresh + reset token lifetimes
+│   ├── JpaAuditingConfig.java       # Enables @CreatedDate/@LastModifiedDate
 │   ├── CorsProperties.java          # Binds app.cors.* properties
 │   └── OpenApiConfig.java           # Swagger/OpenAPI setup
 ├── controller/                      # REST endpoints (the "front door")
@@ -120,7 +123,9 @@ src/main/java/com/velora/backend/
 │   ├── QuotationController.java     # /api/bookings/{bookingId}/quotation
 │   └── ReviewController.java        # /api/bookings/{bookingId}/review
 ├── service/                          # Business logic (the "brain")
-│   ├── AuthService.java
+│   ├── AuthService.java               # Register, login, refresh, logout
+│   ├── RefreshTokenService.java       # Issues/rotates/revokes long-lived sessions
+│   ├── PasswordService.java           # Forgot, reset and change password
 │   ├── UserService.java
 │   ├── PortfolioItemService.java
 │   ├── CategoryService.java
@@ -277,8 +282,11 @@ autocomplete property names.
 app:
   jwt:
     secret: ${JWT_SECRET:}
-    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+    expiration-ms: ${JWT_EXPIRATION_MS:900000}
     issuer: velora-backend
+  auth:
+    refresh-token-ttl: ${REFRESH_TOKEN_TTL:30d}
+    password-reset-ttl: ${PASSWORD_RESET_TTL:30m}
 ```
 
 maps directly onto:
@@ -2258,8 +2266,14 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 
 | Method | Path | Auth required | Role restriction | Purpose |
 |---|---|---|---|---|
-| POST | `/api/auth/register` | No | — | Create a new account (customer or professional — never admin), returns a JWT |
-| POST | `/api/auth/login` | No | — | Authenticate with email/password, returns a JWT |
+| POST | `/api/auth/register` | No | — | Create a new account (customer or professional — never admin), returns an access + refresh token |
+| POST | `/api/auth/login` | No | — | Authenticate with email/password, returns an access + refresh token |
+| POST | `/api/auth/refresh` | No¹ | — | Exchange a refresh token for a new pair; the presented one is revoked |
+| POST | `/api/auth/logout` | No¹ | — | End this session — idempotent, an unknown token still returns 204 |
+| POST | `/api/auth/logout-all` | Yes | — | End every session for the current user |
+| POST | `/api/auth/password/forgot` | No | — | Request a reset token; always 202, even for unknown emails |
+| POST | `/api/auth/password/reset` | No¹ | — | Set a new password with a reset token (single use, revokes all sessions) |
+| POST | `/api/auth/password/change` | Yes | — | Change your own password, current password required (revokes all sessions) |
 | GET | `/api/users/profile` | Yes | — | Get the current user's own profile (includes availability/rating for professionals) |
 | PUT | `/api/users/profile` | Yes | — | Update the current user's own profile, incl. availability toggle (partial update) |
 | GET | `/api/portfolio` | No | — | Search/browse the portfolio catalog (paginated, filterable) |
@@ -2289,9 +2303,79 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | GET | `/swagger-ui/index.html` | No | — | Interactive API documentation |
 | GET | `/v3/api-docs` | No | — | Raw OpenAPI JSON spec |
 
+¹ No `Authorization` header required — the refresh or reset token in the request body is
+itself the credential. These are listed individually in `SecurityConfig.PUBLIC_ENDPOINTS`
+rather than covered by an `/api/auth/**` wildcard, so that `logout-all` and
+`password/change` stay private. See [§26](#26-sessions-logout--password-recovery).
+
 ---
 
-## 26. Appendix: End-to-End Flow Diagrams (No Code)
+## 26. Sessions, Logout & Password Recovery
+
+**Why this exists:** a JWT can't be taken back. Once signed, it's valid until it expires,
+no matter what happens to the account behind it. That's fine for a web app where the
+token lives 15 minutes and the tab gets closed; it's not fine for a phone that expects to
+stay signed in for weeks. Two token types solve it:
+
+| | Access token | Refresh token |
+|---|---|---|
+| Format | Signed JWT | 256 random bits, Base64url |
+| Lifetime | 15 min (`JWT_EXPIRATION_MS`) | 30 days (`REFRESH_TOKEN_TTL`) |
+| Stored server-side? | No — stateless | Yes, as a SHA-256 digest |
+| Revocable? | **No** | Yes |
+| Sent as | `Authorization: Bearer …` | Request body, only to `/auth/refresh` and `/auth/logout` |
+
+The access token stays short precisely *because* it can't be revoked — its lifetime is the
+window a stolen one keeps working. Everything that needs to be cancellable lives in
+`refresh_tokens`, where a row can be struck out.
+
+**Why the tokens are hashed:** `refresh_tokens.token_hash` and
+`password_reset_tokens.token_hash` hold a SHA-256 digest, never the token. A database dump
+therefore can't be replayed against the API. Plain SHA-256 is correct here — unlike a
+password, these are 256 bits of `SecureRandom` output, so there is nothing to brute-force,
+and lookup has to be deterministic. `SecureTokenGenerator` owns both halves.
+
+**Rotation:** `RefreshTokenService.consumeAndRotate` revokes the presented token *and*
+issues a new one on every refresh. A refresh token is single-use, so a stolen one stops
+working the moment the legitimate client next refreshes. Unknown, expired and
+already-revoked tokens all fail identically — the client learns nothing from which case it
+hit.
+
+**Logout is deliberately forgiving.** `revoke` does nothing if the token isn't found: the
+caller's intent is "end this session", and a token that was already revoked, or never
+valid, satisfies that. Returning `404` would tell an attacker which tokens exist and would
+make a client's cleanup-on-logout fail for no useful reason.
+
+**Password changes end every session.** Both `resetPassword` and `changePassword` finish
+with `revokeAllForUser`. A password change is exactly the moment you want an attacker's
+stolen session to stop working — including, deliberately, the caller's own other devices.
+
+**`changePassword` re-checks the current password** even though the caller already holds a
+valid access token. A token proves the session authenticated at some point; it doesn't
+prove the person holding the unlocked phone right now knows the password.
+
+**Forgot-password never says whether the account exists.** `requestReset` returns normally
+either way and `202 Accepted` is the response for any syntactically valid email — the same
+reasoning as the vague login error in [§11](#11-authentication-flow--login). A second
+request invalidates the first outstanding token, so only one link is ever live.
+
+**Delivery is not built.** `PasswordResetNotifier` is an interface; the only implementation,
+`LoggingPasswordResetNotifier`, writes the token to the log. The security-bearing parts —
+generation, hashing, expiry, single use, session revocation — are complete; sending the
+email is a one-bean swap that changes nothing above it. **A reset token in a log file is a
+reset token available to anyone who can read logs**, so this must not reach production
+as-is.
+
+**The security config stopped using a wildcard.** `/api/auth/**` used to be `permitAll`.
+Two of the new endpoints — `logout-all` and `password/change` — identify the caller by
+their access token, and the wildcard would have silently published them. `PUBLIC_ENDPOINTS`
+now lists the auth routes one by one; each is public because it carries its own credential
+(a password, a refresh token, or a reset token), and anything new under `/api/auth` is
+private until someone deliberately adds it to that list.
+
+---
+
+## 27. Appendix: End-to-End Flow Diagrams (No Code)
 
 Every flow above, redrawn as a decision tree with no class names, no annotations, and no
 Java — including the error branches. Useful for onboarding a non-backend reader, for
@@ -2299,7 +2383,7 @@ reviewing the business rules without the framework noise, and as a checklist whe
 changing one of these flows. Each diagram links back to the section that explains the
 same flow in code.
 
-### 26.1 Startup → [§3](#3-application-startup-flow)
+### 27.1 Startup → [§3](#3-application-startup-flow)
 
 Configuration loads, the JWT secret is validated, Flyway migrates, JPA verifies the
 schema, security is wired, the server listens. Any failure aborts startup — nothing ever
@@ -2349,7 +2433,7 @@ Start web server, begin listening
 Application ready to accept requests
 ```
 
-### 26.2 Registration → [§10](#10-authentication-flow--register)
+### 27.2 Registration → [§10](#10-authentication-flow--register)
 
 Admin accounts can never be self-registered — that's a hard block, not a convention. A
 professional additionally gets an empty profile record created and linked at signup, so
@@ -2404,7 +2488,7 @@ Generate signed JWT access token
 201 Created + access token + basic user info
 ```
 
-### 26.3 Login → [§11](#11-authentication-flow--login)
+### 27.3 Login → [§11](#11-authentication-flow--login)
 
 The rejection message is deliberately vague about *which* half was wrong — saying "no
 such email" would let an attacker enumerate which addresses have accounts.
@@ -2440,7 +2524,89 @@ Generate a fresh signed JWT access token
 Client stores token, attaches it to future requests
 ```
 
-### 26.4 Authenticated Request → [§12](#12-how-a-protected-request-is-authenticated-jwt-filter), [§13](#13-authorization--roles-and-preauthorize)
+### 27.3b Sessions & Password Recovery → [§26](#26-sessions-logout--password-recovery)
+
+Refresh tokens are single-use: spending one revokes it and mints another. Everything that
+touches a password ends every session the account has.
+
+```
+Access token expired (client gets a 401)
+        │
+        ▼
+POST /api/auth/refresh with the stored refresh token
+        │
+        ▼
+Hash it, look for a matching row
+        │
+        ├── No row, already revoked, or past its expiry
+        │         │
+        │         ▼
+        │   401 (all three cases look identical from outside)
+        │   → client must log in again
+        │
+        ▼
+Revoke the presented token (single use)
+        │
+        ▼
+Issue a NEW access token + a NEW refresh token
+        │
+        ▼
+200 OK — client replaces both
+
+
+Logout (this device)                Logout everywhere
+        │                                   │
+        ▼                                   ▼
+Revoke the presented token          Requires a valid access token
+ (unknown token → still 204;                │
+  the goal is "be logged out")              ▼
+        │                           Revoke every row for this user
+        ▼                                   │
+   204 No Content                           ▼
+                                     204 No Content
+
+
+Forgot password
+        │
+        ▼
+Look up the email
+        │
+        ├── No such account → do nothing at all
+        │
+        ├── Account exists  → invalidate any outstanding token,
+        │                     store a hash of a fresh one,
+        │                     hand the raw token to the notifier
+        │
+        ▼
+202 Accepted — identical either way, so the response
+ never reveals which emails have accounts
+
+
+Reset password (with token)          Change password (logged in)
+        │                                     │
+        ▼                                     ▼
+Hash the token, find a usable row      Verify the CURRENT password
+        │                                     │
+        ├── Missing/expired/spent             ├── Wrong → 401
+        │         │                           │
+        │         ▼                           │
+        │       401                           │
+        ▼                                     ▼
+Save the new password hash             Save the new password hash
+        │                                     │
+        ▼                                     ▼
+Mark the token used (single use)              │
+        │                                     │
+        └──────────────┬──────────────────────┘
+                       ▼
+        Revoke EVERY refresh token for this user
+         (any stolen session dies with the password)
+                       │
+                       ▼
+                 204 No Content
+```
+
+### 27.4 Authenticated Request → [§12](#12-how-a-protected-request-is-authenticated-jwt-filter), [§13](#13-authorization--roles-and-preauthorize)
 
 Runs on every single request. A bad token is never an error by itself — it just leaves
 the request anonymous, and the authorization rules decide whether that's fatal. The user
@@ -2506,7 +2672,7 @@ Allow         Authenticated?
              403 Forbidden      Controller Executes
 ```
 
-### 26.5 General Request Lifecycle → [§14](#14-full-request-lifecycle-controller--service--repository--db)
+### 27.5 General Request Lifecycle → [§14](#14-full-request-lifecycle-controller--service--repository--db)
 
 The shape every feature request follows. Shape validation happens before the database is
 ever touched; data-dependent rules (ownership, existence, uniqueness) happen one layer
@@ -2516,7 +2682,7 @@ deeper.
 Request arrives
         │
         ▼
-Security checkpoint (if endpoint is protected — see 26.4)
+Security checkpoint (if endpoint is protected — see 27.4)
         │
         ▼
 Read input: path variables / query params / JSON body
@@ -2553,7 +2719,7 @@ Map entity/entities → response DTO
 Return response with appropriate status code
 ```
 
-### 26.6 Portfolio Catalog Browsing → [§15](#15-feature-walkthrough-portfolio-catalog-searchfilterpagination)
+### 27.6 Portfolio Catalog Browsing → [§15](#15-feature-walkthrough-portfolio-catalog-searchfilterpagination)
 
 Fully public. Every filter is optional and independently applied. Style and price exist
 only on interior-design items — a painter's or plumber's item omits those fields
@@ -2705,7 +2871,7 @@ Interior-design details: style and/or price sent?
 200 OK
 ```
 
-### 26.7 Booking → [§16](#16-feature-walkthrough-bookings-state-machine)
+### 27.7 Booking → [§16](#16-feature-walkthrough-bookings-state-machine)
 
 The request type decides which rules apply: Individual Service work is always assigned by
 Velora (naming a professional is rejected, not ignored), while Full Home Services allows
@@ -2804,7 +2970,7 @@ Apply the change
 200 OK
 ```
 
-### 26.8 Professional Assignment & Matching → [§17](#17-feature-walkthrough-professional-assignment--matching)
+### 27.8 Professional Assignment & Matching → [§17](#17-feature-walkthrough-professional-assignment--matching)
 
 Scoring is a recommendation, never an automatic assignment — an admin still decides.
 Unavailable professionals are excluded before scoring, and the same 100-point formula
@@ -2863,7 +3029,7 @@ Assign that professional to the booking
 200 OK
 ```
 
-### 26.9 Quotation → [§18](#18-feature-walkthrough-quotations-post-consultation-estimate)
+### 27.9 Quotation → [§18](#18-feature-walkthrough-quotations-post-consultation-estimate)
 
 A booking never carries a price; the quotation does. The total is always recomputed from
 the line items, never accepted from the client, and a sent quotation is frozen — there's
@@ -2949,7 +3115,7 @@ Mark as ACCEPTED or REJECTED (final either way)
 200 OK
 ```
 
-### 26.10 Review & Rating → [§19](#19-feature-walkthrough-reviews--ratings)
+### 27.10 Review & Rating → [§19](#19-feature-walkthrough-reviews--ratings)
 
 One review per booking, ever, and only after completion. Saving one immediately
 recomputes the professional's aggregate from *all* their reviews — the same number the
@@ -3026,7 +3192,7 @@ Map each to a public card
 200 OK
 ```
 
-### 26.11 Profile → [§20](#20-feature-walkthrough-user-profile-role-conditional-data)
+### 27.11 Profile → [§20](#20-feature-walkthrough-user-profile-role-conditional-data)
 
 Always the caller's own profile — identity comes from the token, never from input.
 Professional-only fields sent by a customer are silently ignored, and rating/review count
@@ -3074,7 +3240,7 @@ Save changes
 200 OK + updated profile
 ```
 
-### 26.12 Validation → [§21](#21-validation-flow)
+### 27.12 Validation → [§21](#21-validation-flow)
 
 Every failing field is reported at once, not just the first, so a client can fix
 everything in one pass. This layer only inspects the shape of the data — it knows nothing
@@ -3108,7 +3274,7 @@ Continue to business logic
   are checked there, not at this stage)
 ```
 
-### 26.13 Error Handling → [§22](#22-exception-handling-flow)
+### 27.13 Error Handling → [§22](#22-exception-handling-flow)
 
 One error shape for the entire API. Failures caught in the security filter chain and
 failures raised deep in business logic are deliberately indistinguishable from the
@@ -3143,7 +3309,7 @@ Send to client
   or deep inside business logic)
 ```
 
-### 26.14 Documentation → [§23](#23-api-documentation-swaggeropenapi)
+### 27.14 Documentation → [§23](#23-api-documentation-swaggeropenapi)
 
 Generated from the real code, so it can't drift from what the API actually does. The docs
 pages are public; calling protected endpoints through them still needs a real token.
@@ -3172,7 +3338,7 @@ Every subsequent "try it out" call
 Protected endpoints can be tested directly from the browser
 ```
 
-### 26.15 Environment & Configuration → [§24](#24-environment--secrets-management)
+### 27.15 Environment & Configuration → [§24](#24-environment--secrets-management)
 
 Nothing sensitive is ever written into the codebase — it all arrives from outside, so the
 same build runs anywhere. The `local` profile layers on dev-only conveniences and never
