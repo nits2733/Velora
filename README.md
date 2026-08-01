@@ -152,17 +152,28 @@ mvn test
 <summary><b>What's covered</b></summary>
 <br>
 
-Unit tests (JUnit 5 + Mockito + AssertJ) cover: JWT issuance/validation, auth
-registration rules (duplicate email, admin self-registration blocked, professional
-profile auto-creation), booking creation/state-transition/ownership rules (including
-the Full Home Services vs. Individual Service split and the assignment-request path),
-quotation draft/send/accept/reject rules, professional-matching scoring/ranking/
-tie-breaking, portfolio-item upload rules, and review creation/duplicate-prevention/
-rating recomputation.
+**Service tests** (JUnit 5 + Mockito + AssertJ) cover the business rules: JWT
+issuance/validation, auth registration rules (duplicate email, admin self-registration
+blocked, professional profile auto-creation), booking creation/state-transition/ownership
+rules (including the Full Home Services vs. Individual Service split and the
+assignment-request path), quotation draft/send/accept/reject rules,
+professional-matching scoring/ranking/tie-breaking, portfolio-item
+upload/edit/delete rules, the professional directory, and review
+creation/duplicate-prevention/rating recomputation.
 
-There is no integration test against a real Postgres instance in this environment —
-verify manually against your Neon instance with `mvn spring-boot:run` and the endpoints
-below before deploying.
+**Web-layer tests** (`@WebMvcTest` + MockMvc + spring-security-test) cover what services
+can't see, running against the *real* security chain — actual `SecurityConfig` rules,
+actual JWT filter, actual `RestSecurityErrorHandler`:
+
+- which endpoints are genuinely public vs. token-required
+- `@PreAuthorize` role guards per endpoint (customer-only, professional-only, admin-only)
+- the error contract on the wire: 401/403/404/409/400 bodies all in one `ApiErrorResponse` shape
+- bean validation running before any service is reached, reporting every bad field at once
+- controller-only logic: page-size clamping, sort-field whitelisting, principal-id plumbing
+
+There is still no test against a real Postgres instance in this environment — repository
+queries and migrations are unexercised, so verify against your Neon instance with
+`mvn spring-boot:run` before deploying.
 </details>
 
 ## 🧩 Module Overview

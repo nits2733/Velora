@@ -4,12 +4,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.Instant;
 import java.util.List;
@@ -63,6 +65,36 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiErrorResponse> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
+    }
+
+    /**
+     * A path variable or query parameter that can't be converted to its declared type -
+     * {@code /api/portfolio/abc}, {@code ?availability=MAYBE}. That's a malformed request,
+     * not a server fault, so it must not fall through to the generic 500 handler below.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex,
+                                                                HttpServletRequest req) {
+        String message = "Invalid value for '" + ex.getName() + "'";
+        List<ApiErrorResponse.FieldViolation> fieldErrors =
+                List.of(new ApiErrorResponse.FieldViolation(ex.getName(), expectedTypeOf(ex)));
+        return build(HttpStatus.BAD_REQUEST, message, req, fieldErrors);
+    }
+
+    /** A malformed or unreadable JSON body - again a client error, not a server one. */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex,
+                                                                  HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Malformed request body", req, null);
+    }
+
+    private static String expectedTypeOf(MethodArgumentTypeMismatchException ex) {
+        Class<?> required = ex.getRequiredType();
+        if (required != null && required.isEnum()) {
+            return "Must be one of: " + String.join(", ",
+                    java.util.Arrays.stream(required.getEnumConstants()).map(Object::toString).toList());
+        }
+        return required != null ? "Must be a valid " + required.getSimpleName() : "Invalid value";
     }
 
     @ExceptionHandler(Exception.class)

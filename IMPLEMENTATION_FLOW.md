@@ -2109,6 +2109,8 @@ the Jackson config, omitted from the JSON entirely).
 | `DataIntegrityViolationException` (Spring/JPA) | 409 Conflict | A DB constraint was violated (e.g. race-condition duplicate) |
 | `MethodArgumentNotValidException` | 400 Bad Request | `@Valid` bean validation failed — includes a `fieldErrors` list, one entry per invalid field |
 | `IllegalArgumentException` | 400 Bad Request | Ad-hoc business-rule violations thrown directly in services (e.g. "Selected user is not a professional", "Selected category does not match the request type") |
+| `MethodArgumentTypeMismatchException` | 400 Bad Request | A path variable or query parameter that can't be converted to its declared type — `/api/portfolio/abc`, `?availability=MAYBE`. Reports the offending parameter, and for enums the permitted values |
+| `HttpMessageNotReadableException` | 400 Bad Request | A malformed or unparseable JSON body |
 | Anything else (`Exception`) | 500 Internal Server Error | Unexpected/unmapped errors — message is deliberately generic ("An unexpected error occurred") so internal details never leak to clients |
 
 **Example — how a validation failure becomes a response:**
@@ -2141,6 +2143,15 @@ If you register with a too-short password and a missing email, the client receiv
 
 — one entry per failing field, exactly matching the `@Size(message = "...")` you wrote
 on the DTO.
+
+**Why the last two rows exist:** both were added because the web-layer tests found them
+missing. A request like `?availability=MAYBE` never reaches a controller method — Spring
+fails to bind the parameter and throws before invocation — so with no handler registered
+it fell through to the catch-all `Exception` mapping and came back as a **500**, telling
+the client the server was broken when the request was simply wrong. No service test could
+have caught it: the failure happens in argument resolution, above the layer those tests
+exercise. Same for a malformed JSON body and for a non-numeric path variable like
+`/api/portfolio/abc`.
 
 **Two layers of 401/403 handling, and why both exist:** You'll notice 401/403 are
 produced in *two* different places — `GlobalExceptionHandler` (for exceptions thrown
