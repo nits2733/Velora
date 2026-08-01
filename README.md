@@ -423,5 +423,7 @@ confirms**, never a silent auto-assignment.
 🧭 [Flow diagrams](./IMPLEMENTATION_FLOW.md#27-appendix-end-to-end-flow-diagrams-no-code) — every request flow as a no-code decision tree
 &nbsp;•&nbsp;
 📘 [`Velora-Whitepaper.html`](./Velora-Whitepaper.html) — product + architecture whitepaper (print-to-PDF)
+&nbsp;•&nbsp;
+🔌 [`Velora-ThirdParty-Setup.pdf`](./Velora-ThirdParty-Setup.pdf) — third-party services to set up, and how
 
 </div>

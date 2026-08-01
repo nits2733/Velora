@@ -1,0 +1,410 @@
+<title>Velora — Third-Party Services Setup Guide</title>
+<style>
+:root {
+  --ink: #1c2430;
+  --sub: #5b6472;
+  --bg: #faf8f4;
+  --paper: #ffffff;
+  --line: #e4ddd0;
+  --accent: #b8622f;
+  --accent-soft: #f3e2d3;
+  --go: #2f7a4d;
+  --go-soft: #e1f0e6;
+  --wait: #4a6a8a;
+  --wait-soft: #e6edf3;
+  --warn: #9a3412;
+  --warn-soft: #fdeee4;
+  --mono-bg: #f1ede4;
+  --font-display: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', serif;
+  --font-body: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Consolas', 'Cascadia Code', monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 10.5pt;
+  line-height: 1.6;
+}
+.page {
+  max-width: 800px;
+  margin: 0 auto;
+  background: var(--paper);
+  padding: 42px 54px 54px;
+}
+h1 {
+  font-family: var(--font-display);
+  font-size: 27pt;
+  line-height: 1.15;
+  margin: 0 0 6px;
+  letter-spacing: -0.4px;
+}
+.lede { color: var(--sub); font-size: 11pt; margin: 0 0 4px; }
+.meta { color: var(--sub); font-size: 8.5pt; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 20px; }
+h2 {
+  font-family: var(--font-display);
+  font-size: 15pt;
+  margin: 30px 0 4px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--accent);
+  page-break-after: avoid;
+}
+h2 .n { color: var(--accent); margin-right: 10px; font-size: 12pt; }
+h3 {
+  font-size: 11.5pt;
+  margin: 20px 0 6px;
+  page-break-after: avoid;
+}
+h4 { font-size: 9.5pt; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--sub); }
+p { margin: 6px 0; }
+ul, ol { margin: 6px 0 6px 0; padding-left: 20px; }
+li { margin: 3px 0; }
+code {
+  font-family: var(--font-mono);
+  font-size: 8.8pt;
+  background: var(--mono-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+pre {
+  font-family: var(--font-mono);
+  font-size: 8.5pt;
+  background: var(--mono-bg);
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+  overflow-x: auto;
+  line-height: 1.5;
+  margin: 8px 0;
+  white-space: pre-wrap;
+  page-break-inside: avoid;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 9pt;
+  page-break-inside: avoid;
+}
+th {
+  text-align: left;
+  background: var(--mono-bg);
+  padding: 6px 9px;
+  border-bottom: 1.5px solid var(--line);
+  font-weight: 600;
+}
+td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.pill {
+  display: inline-block;
+  font-size: 7.5pt;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 10px;
+  vertical-align: middle;
+}
+.pill-go { background: var(--go-soft); color: var(--go); }
+.pill-wait { background: var(--wait-soft); color: var(--wait); }
+.pill-later { background: var(--accent-soft); color: var(--accent); }
+.pill-done { background: var(--go-soft); color: var(--go); }
+.rec {
+  background: var(--go-soft);
+  border-left: 3px solid var(--go);
+  padding: 8px 14px;
+  margin: 10px 0;
+  page-break-inside: avoid;
+}
+.rec strong { color: var(--go); }
+.warn {
+  background: var(--warn-soft);
+  border-left: 3px solid var(--warn);
+  padding: 8px 14px;
+  margin: 10px 0;
+  page-break-inside: avoid;
+}
+.warn strong { color: var(--warn); }
+.card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 18px 14px;
+  margin: 14px 0;
+  page-break-inside: avoid;
+}
+.svc-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cost { color: var(--sub); font-size: 9pt; }
+.build { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 8px; font-size: 9pt; color: var(--sub); }
+.build b { color: var(--ink); }
+@media print {
+  body { background: #fff; font-size: 9.5pt; }
+  .page { max-width: none; padding: 0; }
+  h2 { page-break-before: auto; }
+  .card, pre, table { page-break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+@page { margin: 14mm 15mm; size: A4; }
+</style>
+
+<div class="page">
+
+<h1>Third-Party Services</h1>
+<p class="lede">What Velora needs you to sign up for, why the backend needs it, and how to set each one up.</p>
+<p class="meta">Velora backend · MVP&nbsp;1 · Prepared 1 August 2026 · Reflects the codebase at commit <code>8b8d3b6</code></p>
+
+<h2><span class="n">00</span>Summary</h2>
+
+<table>
+<tr><th>Service</th><th>Purpose</th><th>Recommended</th><th>Cost to start</th><th>When</th></tr>
+<tr><td>Database</td><td>Postgres</td><td>Neon</td><td>Free</td><td><span class="pill pill-done">Done</span></td></tr>
+<tr><td>Image hosting</td><td>Portfolio photos</td><td><b>Cloudinary</b></td><td>Free</td><td><span class="pill pill-go">Now</span></td></tr>
+<tr><td>Email</td><td>Password reset</td><td><b>Resend</b></td><td>Free</td><td><span class="pill pill-go">Now</span></td></tr>
+<tr><td>Push notifications</td><td>Booking &amp; quote alerts</td><td><b>Expo Push</b></td><td>Free</td><td><span class="pill pill-wait">Before users</span></td></tr>
+<tr><td>API hosting</td><td>Run the backend</td><td><b>Railway</b></td><td>~$5/mo</td><td><span class="pill pill-wait">Before users</span></td></tr>
+<tr><td>Domain</td><td>Email sender + API URL</td><td>Namecheap / Cloudflare</td><td>~₹900/yr</td><td><span class="pill pill-wait">Before users</span></td></tr>
+<tr><td>Apple Developer</td><td>Ship to iOS + APNs</td><td>—</td><td>$99/yr</td><td><span class="pill pill-wait">Before users</span></td></tr>
+<tr><td>Google Play</td><td>Ship to Android</td><td>—</td><td>$25 once</td><td><span class="pill pill-wait">Before users</span></td></tr>
+<tr><td>Error monitoring</td><td>Catch crashes</td><td>Sentry</td><td>Free</td><td><span class="pill pill-later">Optional</span></td></tr>
+<tr><td>Payments</td><td>Collect money</td><td>Razorpay</td><td>Free + 2%/txn</td><td><span class="pill pill-later">Later phase</span></td></tr>
+<tr><td>SMS / OTP</td><td>Phone verification</td><td>MSG91</td><td>Pay-as-you-go</td><td><span class="pill pill-later">Optional</span></td></tr>
+</table>
+
+<p><b>Total to get started properly: ₹0.</b> Cloudinary, Resend, Expo and Sentry all have free tiers
+that comfortably cover development and early users. Real money only starts at hosting (~$5/mo)
+and the store accounts ($99/yr + $25 once), and only when you ship.</p>
+
+<div class="rec">
+<strong>Do these two first.</strong> Cloudinary and Resend are the only ones blocking backend work
+right now — everything else can wait until the app exists. Both take about ten minutes to sign up for.
+</div>
+
+<h2><span class="n">01</span>Cloudinary — image hosting <span class="pill pill-go">Now</span></h2>
+
+<h4>Why the backend needs it</h4>
+<p>A portfolio item stores <code>coverImageUrl</code> as a plain string. There is no upload endpoint,
+so today a professional can only reference an image that already exists somewhere on the internet.
+The upload screen in the app has nowhere to put the file until this exists.</p>
+
+<h4>Why Cloudinary over the alternatives</h4>
+<p>It resizes and crops on the fly from the URL. A portfolio grid needs thumbnails, a detail screen
+needs a large version, and phone cameras produce 4&nbsp;MB photos — with Cloudinary that is a URL
+parameter, with plain object storage it is a job you have to build and run.</p>
+
+<table>
+<tr><th>Alternative</th><th>Free tier</th><th>Trade-off</th></tr>
+<tr><td><b>Cloudinary</b> (recommended)</td><td>25 credits/mo (~25k transforms)</td><td>Transforms included; generous free tier</td></tr>
+<tr><td>Supabase Storage</td><td>1 GB</td><td>Simpler, but no image transforms</td></tr>
+<tr><td>AWS S3 + CloudFront</td><td>12 months free</td><td>Cheapest at scale, most setup, no transforms</td></tr>
+<tr><td>UploadThing</td><td>2 GB</td><td>Very easy, but a thin wrapper you'd outgrow</td></tr>
+</table>
+
+<h4>Setup</h4>
+<ol>
+<li>Sign up at <code>cloudinary.com</code> — the free "Programmable Media" plan, no card required.</li>
+<li>The dashboard shows <b>Cloud name</b>, <b>API key</b> and <b>API secret</b>. Copy all three.</li>
+<li>Settings → Upload → Upload presets → add a preset named <code>velora_portfolio</code>.
+    Set <b>Signing mode: Signed</b> and a folder such as <code>velora/portfolio</code>.</li>
+<li>Optionally add an incoming transformation on the preset to cap uploads at ~2000px wide —
+    this stops a 12&nbsp;MP phone photo from eating your quota.</li>
+<li>Put the credentials in <code>.env</code> (never in git):</li>
+</ol>
+
+<pre>CLOUDINARY_CLOUD_NAME=your-cloud-name
+CLOUDINARY_API_KEY=123456789012345
+CLOUDINARY_API_SECRET=your-secret
+CLOUDINARY_UPLOAD_PRESET=velora_portfolio</pre>
+
+<div class="warn">
+<strong>Signed, not unsigned.</strong> Cloudinary also offers unsigned presets, where the app uploads
+with no server involvement. That means anyone who reads your app bundle can upload anything to your
+account, at your cost. The backend signs each upload instead — the setup below is built for that.
+</div>
+
+<div class="build">
+<b>What I build once you have this:</b> <code>GET /api/uploads/signature</code> — a
+<code>PROFESSIONAL</code>-only endpoint returning a short-lived signature. The app uploads the file
+straight to Cloudinary and sends the resulting URL to <code>POST /api/portfolio</code>. The image
+never passes through your server, so uploads cost you no bandwidth and no memory. <i>Roughly 2 hours.</i>
+</div>
+
+<h2><span class="n">02</span>Resend — email delivery <span class="pill pill-go">Now</span></h2>
+
+<h4>Why the backend needs it</h4>
+<p>Password reset is fully built <i>except</i> delivery: token generation, hashing, 30-minute expiry,
+single use, and revoking every session on reset all work and are tested. The only implementation of
+<code>PasswordResetNotifier</code> writes the token to the application log, which is fine in
+development and unacceptable in production — a reset token in a log file is a working reset token for
+anyone who can read logs.</p>
+
+<table>
+<tr><th>Alternative</th><th>Free tier</th><th>Trade-off</th></tr>
+<tr><td><b>Resend</b> (recommended)</td><td>3,000/mo, 100/day</td><td>Cleanest API, plain HTTPS from Java, no SMTP setup</td></tr>
+<tr><td>Brevo</td><td>300/day</td><td>Strong India deliverability; clunkier dashboard</td></tr>
+<tr><td>AWS SES</td><td>~$0.10 per 1,000</td><td>Cheapest at scale; sandbox removal needs a support ticket</td></tr>
+<tr><td>SendGrid</td><td>100/day</td><td>Fine, but heavier and stricter onboarding</td></tr>
+</table>
+
+<h4>Setup</h4>
+<ol>
+<li>Sign up at <code>resend.com</code>.</li>
+<li><b>To start:</b> use their shared test domain — you can send to your own address immediately with
+    no DNS work. Enough to build and test the whole flow.</li>
+<li><b>Before real users:</b> add your domain, then add the DKIM/SPF records Resend gives you at your
+    registrar. Without this, reset emails land in spam.</li>
+<li>API keys → create one with <b>Sending access</b> only.</li>
+<li>Add to <code>.env</code>:</li>
+</ol>
+
+<pre>RESEND_API_KEY=re_xxxxxxxxxxxx
+MAIL_FROM_ADDRESS=noreply@yourdomain.com
+MAIL_FROM_NAME=Velora
+# Deep link the reset email points at; the app opens this with the token
+APP_PASSWORD_RESET_URL=velora://reset-password</pre>
+
+<div class="build">
+<b>What I build once you have this:</b> a <code>ResendPasswordResetNotifier</code> bean plus the email
+template. It replaces the logging one automatically — no other code changes, because delivery was
+deliberately kept behind an interface. <i>Roughly 1 hour.</i>
+</div>
+
+<h2><span class="n">03</span>Push notifications <span class="pill pill-wait">Before users</span></h2>
+
+<h4>Why it matters</h4>
+<p>The whole product is asynchronous: a customer books and waits for an admin to assign someone; a
+professional waits for bookings; a customer waits for a quotation. With no push, every one of those
+handoffs depends on the user happening to reopen the app. Nothing in the backend touches notifications
+yet.</p>
+
+<div class="rec">
+<strong>If you build with Expo, use Expo Push.</strong> It is free, handles both iOS and Android
+through one API, and spares you certificate handling. Only drop to raw FCM + APNs if you leave Expo.
+</div>
+
+<h4>Setup (Expo route)</h4>
+<ol>
+<li>Create an Expo account, then an EAS project for the app.</li>
+<li>The app requests notification permission and gets an Expo push token.</li>
+<li>The app sends that token to the backend, which stores it per user and device.</li>
+<li>Backend sends to Expo's HTTP API when something happens. No Apple/Google credentials needed
+    for Android; iOS still needs the Apple Developer account for a real device build.</li>
+</ol>
+
+<pre>EXPO_ACCESS_TOKEN=your-expo-token   # only needed for higher rate limits</pre>
+
+<div class="build">
+<b>What I build:</b> a <code>device_tokens</code> table + register/unregister endpoints, and a
+notification service hooked into the events that matter — booking assigned, booking confirmed,
+quotation sent, quotation accepted/rejected, booking completed. <i>Roughly 1 day.</i>
+</div>
+
+<h2><span class="n">04</span>Hosting the API <span class="pill pill-wait">Before users</span></h2>
+
+<p>The backend currently runs on your laptop. A phone on the same Wi-Fi can reach it by LAN IP for
+early testing, but anything beyond that — a tester elsewhere, a TestFlight build, the store — needs it
+hosted. Neon already hosts the database, so this is only the Spring Boot app.</p>
+
+<table>
+<tr><th>Option</th><th>Cost</th><th>Trade-off</th></tr>
+<tr><td><b>Railway</b> (recommended)</td><td>~$5/mo</td><td>Deploys from GitHub, reads your env vars, minimal config</td></tr>
+<tr><td>Render</td><td>Free tier / $7/mo</td><td>Free tier sleeps after inactivity — first request takes ~30s</td></tr>
+<tr><td>Fly.io</td><td>~$5/mo</td><td>Good India-region latency; more Docker knowledge needed</td></tr>
+<tr><td>AWS / GCP</td><td>Varies</td><td>Only worth it once you have a reason</td></tr>
+</table>
+
+<h4>Setup</h4>
+<ol>
+<li>Connect the GitHub repo. Railway detects Maven and Java 21 on its own.</li>
+<li>Copy every variable from <code>.env</code> into the platform's environment settings —
+    <b>generate a fresh <code>JWT_SECRET</code> for production</b>, do not reuse the dev one.</li>
+<li>Set <code>CORS_ALLOWED_ORIGINS</code> to your app's origins.</li>
+<li>Flyway applies all 10 migrations on first boot automatically.</li>
+<li>Point a subdomain such as <code>api.yourdomain.com</code> at it.</li>
+</ol>
+
+<h2><span class="n">05</span>Domain &amp; store accounts <span class="pill pill-wait">Before users</span></h2>
+
+<h3>Domain — ~₹900/year</h3>
+<p>Needed for two things: a credible email sender address (<code>noreply@yourdomain.com</code>, which
+also fixes deliverability) and a stable API URL. Namecheap or Cloudflare Registrar; Cloudflare sells
+at cost and includes DNS.</p>
+
+<h3>Apple Developer Program — $99/year</h3>
+<p>Required to put an iOS build on any real device, including your own for testing, and to use APNs
+for push. <b>Start this early</b> — enrolment verification can take several days, and for a company
+account Apple asks for a D-U-N-S number, which takes longer still. An individual account is faster and
+upgradeable later.</p>
+
+<h3>Google Play Console — $25 once</h3>
+<p>One-time fee, approval usually within a day or two. Android testing works without it via a direct
+APK, so this is only needed to publish.</p>
+
+<h2><span class="n">06</span>Optional and later</h2>
+
+<h3>Sentry — error monitoring <span class="pill pill-later">Optional</span></h3>
+<p>Free tier covers 5,000 errors/month. Worth adding before launch: the 124 automated tests cover
+business rules, but nothing tells you when a real user hits a 500 in production. Add the SDK to both
+backend and app; setup is roughly 20 minutes.</p>
+<pre>SENTRY_DSN=https://xxxx@sentry.io/xxxx</pre>
+
+<h3>Payments <span class="pill pill-later">Later phase</span></h3>
+<p>Nothing about payments exists in the backend — quotations end at "accepted". When that phase starts:
+<b>Razorpay</b> for an Indian audience (UPI, cards, netbanking, INR settlement; ~2% per transaction),
+<b>Stripe</b> only if you go international. Both need business verification — a GST number and bank
+account for Razorpay — so allow a week before you can accept real money.</p>
+
+<h3>SMS / OTP <span class="pill pill-later">Optional</span></h3>
+<p>Only if you decide phone numbers must be verified. <b>MSG91</b> is the cheaper India option;
+Twilio is the global default and costs noticeably more per SMS. Not required by anything currently
+built — accounts are email-based.</p>
+
+<h2><span class="n">07</span>Handling credentials</h2>
+
+<div class="warn">
+<strong>Never commit a real key.</strong> <code>.env</code> is already git-ignored, and
+<code>.env.example</code> holds only placeholder names. Every service above issues keys you can revoke
+and reissue — if one is ever pasted into a chat, a screenshot, a commit or a support ticket, revoke it
+rather than hoping.
+</div>
+
+<p>Use separate keys per environment where the provider allows it (Cloudinary and Resend both do), so a
+leaked development key can be killed without taking production down. Everything the backend reads is
+listed in <code>.env.example</code>; add these as you sign up:</p>
+
+<pre># Cloudinary
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+CLOUDINARY_UPLOAD_PRESET=velora_portfolio
+
+# Email (Resend)
+RESEND_API_KEY=
+MAIL_FROM_ADDRESS=noreply@yourdomain.com
+MAIL_FROM_NAME=Velora
+APP_PASSWORD_RESET_URL=velora://reset-password
+
+# Push (Expo) - later
+EXPO_ACCESS_TOKEN=
+
+# Monitoring - optional
+SENTRY_DSN=</pre>
+
+<h2><span class="n">08</span>Suggested order</h2>
+
+<table>
+<tr><th>#</th><th>Do this</th><th>Time</th><th>Unblocks</th></tr>
+<tr><td>1</td><td>Cloudinary signup + signed preset</td><td>10 min</td><td>Portfolio upload, end to end</td></tr>
+<tr><td>2</td><td>Resend signup (test domain is fine)</td><td>10 min</td><td>Password reset actually works</td></tr>
+<tr><td>3</td><td>Start Apple Developer enrolment</td><td>15 min + wait</td><td>iOS device builds and push; the wait is why it's early</td></tr>
+<tr><td>4</td><td>Buy the domain</td><td>15 min</td><td>Email deliverability, API URL</td></tr>
+<tr><td>5</td><td>Expo account</td><td>5 min</td><td>Push, once the app shell exists</td></tr>
+<tr><td>6</td><td>Railway + Google Play</td><td>1 hour</td><td>Testers on real devices</td></tr>
+</table>
+
+<p>Steps 1 and 2 are the only ones with backend work waiting behind them. Give me the credentials
+in <code>.env</code> — not pasted anywhere else — and both integrations get written the same day.</p>
+
+<p class="meta">Free tiers, prices and dashboard wording were accurate when this was written and do
+change; treat the figures as indicative and confirm on each provider's pricing page before committing.</p>
+
+</div>
