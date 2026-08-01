@@ -254,6 +254,7 @@ All endpoints are prefixed `/api`. Protected endpoints require
 |---|---|---|
 | GET | `/professionals?search=&specialization=&city=&availability=&minExperience=&minRating=&page=&size=&sortBy=&direction=` | Searchable directory — paginated cards, highest-rated first by default; `minRating` excludes unrated professionals |
 | GET | `/professionals/{id}` | Get one professional's public profile (adds the bio) |
+| GET | `/professionals/{id}/reviews?page=&size=` | That professional's reviews, newest first — rating, comment, reviewer name (no booking id) |
 </details>
 
 <details open>

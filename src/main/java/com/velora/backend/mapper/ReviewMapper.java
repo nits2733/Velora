@@ -1,11 +1,23 @@
 package com.velora.backend.mapper;
 
+import com.velora.backend.dto.review.PublicReviewResponse;
 import com.velora.backend.dto.review.ReviewResponse;
 import com.velora.backend.entity.Review;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ReviewMapper {
+
+    /** Public listing shape - no bookingId, plus the reviewer's name. */
+    public PublicReviewResponse toPublicResponse(Review review) {
+        return new PublicReviewResponse(
+                review.getId(),
+                review.getRating(),
+                review.getComment(),
+                review.getCustomer().getFullName(),
+                review.getCreatedAt()
+        );
+    }
 
     public ReviewResponse toResponse(Review review) {
         return new ReviewResponse(

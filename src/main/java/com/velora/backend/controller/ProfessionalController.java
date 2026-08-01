@@ -2,8 +2,10 @@ package com.velora.backend.controller;
 
 import com.velora.backend.dto.professional.ProfessionalPublicProfileResponse;
 import com.velora.backend.dto.professional.ProfessionalSummaryResponse;
+import com.velora.backend.dto.review.PublicReviewResponse;
 import com.velora.backend.entity.AvailabilityStatus;
 import com.velora.backend.service.ProfessionalService;
+import com.velora.backend.service.ReviewService;
 import com.velora.backend.util.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -30,6 +32,7 @@ public class ProfessionalController {
     private static final int MAX_PAGE_SIZE = 50;
 
     private final ProfessionalService professionalService;
+    private final ReviewService reviewService;
 
     @GetMapping
     @Operation(summary = "Search/browse the professional directory with pagination and filters")
@@ -59,6 +62,19 @@ public class ProfessionalController {
     @Operation(summary = "Get a professional's public profile")
     public ResponseEntity<ProfessionalPublicProfileResponse> getPublicProfile(@PathVariable Long id) {
         return ResponseEntity.ok(professionalService.getPublicProfile(id));
+    }
+
+    @GetMapping("/{id}/reviews")
+    @Operation(summary = "List a professional's reviews, newest first")
+    public ResponseEntity<PageResponse<PublicReviewResponse>> getReviews(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        return ResponseEntity.ok(reviewService.getProfessionalReviews(id, pageable));
     }
 
     private String sanitizeSortField(String sortBy) {

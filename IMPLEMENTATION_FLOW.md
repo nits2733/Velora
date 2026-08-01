@@ -115,7 +115,7 @@ src/main/java/com/velora/backend/
 │   ├── UserController.java          # /api/users/**
 │   ├── PortfolioItemController.java # /api/portfolio/**
 │   ├── CategoryController.java      # /api/categories/**
-│   ├── ProfessionalController.java  # /api/professionals/** (public directory + profile)
+│   ├── ProfessionalController.java  # /api/professionals/** (directory, profile, reviews)
 │   ├── BookingController.java       # /api/bookings/** (incl. /assign, /recommendations)
 │   ├── QuotationController.java     # /api/bookings/{bookingId}/quotation
 │   └── ReviewController.java        # /api/bookings/{bookingId}/review
@@ -1899,10 +1899,32 @@ choosing Java-side averaging over a database `@Query` (see
 `@PreAuthorize("hasRole('CUSTOMER')")`, mirroring `QuotationController`'s
 nested-under-the-booking URL style. Nothing new in `GlobalExceptionHandler` — every
 exception this feature throws is one that already existed for `Booking`/`Quotation`.
-Individual review comments aren't exposed through any endpoint yet — only the
-recomputed aggregate, via `ProfessionalProfileResponse`/`ProfessionalPublicProfileResponse`
-— since the rows are already stored with everything needed, adding a reviews-list
-endpoint later doesn't require touching this write path at all.
+**Read path — `GET /api/professionals/{id}/reviews`:** public, paginated, newest first.
+As predicted when the write path was built, the rows already stored everything needed, so
+this required no change to `createReview` at all — a repository overload, a mapper method
+and an endpoint.
+
+Three decisions worth pinning:
+
+1. **`PublicReviewResponse`, not `ReviewResponse`.** The existing response carries
+   `bookingId`, which is fine when handing a review back to the customer who just wrote
+   it, and wrong when handing it to an anonymous stranger browsing the directory. The
+   public shape drops it and adds `customerName` instead, since an attributed review is
+   what makes it credible. Two shapes over one aggregate, split by audience — the same
+   reason `ProfessionalSummaryResponse` and `ProfessionalPublicProfileResponse` coexist.
+2. **`findByProfessionalId` is deliberately overloaded**, not replaced. The `List` version
+   still backs `recomputeProfessionalRating`, which genuinely needs *every* review to
+   average them; the `Page` version is the one that faces a client. Making the aggregate
+   read a paginated slice would silently compute the average of the first 20 reviews.
+3. **No reviews is an empty page, not a `404`.** A professional nobody has reviewed yet
+   exists and is bookable; only an unknown id — or one belonging to a customer — is a
+   `404`, using the same `.filter(role == PROFESSIONAL)` guard as `getPublicProfile` so
+   both endpoints agree on what "no such professional" means.
+
+The endpoint lives on `ProfessionalController` rather than `ReviewController` because
+`ReviewController` is mapped at `/api/bookings/{bookingId}/review` — controllers here are
+organised by URL root, and this one is `/api/professionals/**`, already public in
+`SecurityConfig`.
 
 ---
 
@@ -2237,6 +2259,7 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | GET | `/api/categories` | No | — | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
 | GET | `/api/professionals` | No | — | Search/browse the professional directory (paginated, filterable) |
 | GET | `/api/professionals/{id}` | No | — | Get one professional's public profile (bio, experience, availability, rating) |
+| GET | `/api/professionals/{id}/reviews` | No | — | List that professional's reviews, newest first (paginated) |
 | POST | `/api/bookings` | Yes | CUSTOMER | Book a Full Home Services project (chosen professional, or none — assignment-requested) or an Individual Service request (always assignment-requested) |
 | GET | `/api/bookings` | Yes | — | List the current user's bookings (customer or professional view) |
 | GET | `/api/bookings/{id}` | Yes | — | Get one booking's details (must be a participant) |
@@ -2965,6 +2988,31 @@ Save the updated aggregate onto the professional's profile
         │
         ▼
 201 Created
+
+
+Anyone reads a professional's reviews
+ (GET /api/professionals/{id}/reviews — public, no token needed)
+        │
+        ▼
+Look up user by id
+        │
+        ├── Not found, or not actually a professional account
+        │      │
+        │      ▼
+        │   404 Not Found
+        │
+        ▼
+Load their reviews, newest first, one page at a time
+        │
+        ├── None yet → empty page (NOT a 404 — an unreviewed professional
+        │              still exists and is still bookable)
+        │
+        ▼
+Map each to a public card
+ (rating, comment, reviewer name, date — never the booking id)
+        │
+        ▼
+200 OK
 ```
 
 ### 26.11 Profile → [§20](#20-feature-walkthrough-user-profile-role-conditional-data)

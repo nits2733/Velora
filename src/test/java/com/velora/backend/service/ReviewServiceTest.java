@@ -1,6 +1,7 @@
 package com.velora.backend.service;
 
 import com.velora.backend.dto.review.CreateReviewRequest;
+import com.velora.backend.dto.review.PublicReviewResponse;
 import com.velora.backend.dto.review.ReviewResponse;
 import com.velora.backend.entity.Booking;
 import com.velora.backend.entity.BookingStatus;
@@ -10,16 +11,23 @@ import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.exception.InvalidStateTransitionException;
+import com.velora.backend.exception.ResourceNotFoundException;
 import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.ReviewMapper;
 import com.velora.backend.repository.BookingRepository;
 import com.velora.backend.repository.ProfessionalProfileRepository;
 import com.velora.backend.repository.ReviewRepository;
+import com.velora.backend.repository.UserRepository;
+import com.velora.backend.util.PageResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.List;
@@ -39,6 +47,8 @@ class ReviewServiceTest {
     private BookingRepository bookingRepository;
     @Mock
     private ProfessionalProfileRepository professionalProfileRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private final ReviewMapper reviewMapper = new ReviewMapper();
 
@@ -49,7 +59,8 @@ class ReviewServiceTest {
 
     @BeforeEach
     void setUp() {
-        reviewService = new ReviewService(reviewRepository, bookingRepository, professionalProfileRepository, reviewMapper);
+        reviewService = new ReviewService(reviewRepository, bookingRepository, professionalProfileRepository,
+                userRepository, reviewMapper);
 
         customer = User.builder().id(1L).fullName("Cust").role(Role.CUSTOMER).build();
         professional = User.builder().id(2L).fullName("Pro").role(Role.PROFESSIONAL).build();
@@ -123,5 +134,50 @@ class ReviewServiceTest {
         assertThat(response.rating()).isEqualTo(5);
         assertThat(profile.getAverageRating()).isEqualByComparingTo("4.50");
         assertThat(profile.getRatingCount()).isEqualTo(2);
+    }
+
+    @Test
+    void professionalReviewsAreListedWithoutTheBookingId() {
+        Pageable pageable = PageRequest.of(0, 20);
+        Booking booking = Booking.builder()
+                .id(34L).customer(customer).professional(professional)
+                .status(BookingStatus.COMPLETED).scheduledAt(Instant.now()).build();
+        Review review = Review.builder()
+                .id(600L).booking(booking).customer(customer).professional(professional)
+                .rating(5).comment("Excellent").createdAt(Instant.now())
+                .build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(professional));
+        when(reviewRepository.findByProfessionalId(2L, pageable))
+                .thenReturn(new PageImpl<>(List.of(review), pageable, 1));
+
+        PageResponse<PublicReviewResponse> page = reviewService.getProfessionalReviews(2L, pageable);
+
+        assertThat(page.totalElements()).isEqualTo(1);
+        assertThat(page.content()).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo(600L);
+            assertThat(item.rating()).isEqualTo(5);
+            assertThat(item.comment()).isEqualTo("Excellent");
+            assertThat(item.customerName()).isEqualTo("Cust");
+        });
+    }
+
+    @Test
+    void aProfessionalWithNoReviewsGetsAnEmptyPageNotA404() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(professional));
+        when(reviewRepository.findByProfessionalId(2L, pageable)).thenReturn(Page.empty(pageable));
+
+        PageResponse<PublicReviewResponse> page = reviewService.getProfessionalReviews(2L, pageable);
+
+        assertThat(page.content()).isEmpty();
+        assertThat(page.totalElements()).isZero();
+    }
+
+    @Test
+    void listingReviewsRejectsAUserWhoIsNotAProfessional() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> reviewService.getProfessionalReviews(1L, PageRequest.of(0, 20)))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

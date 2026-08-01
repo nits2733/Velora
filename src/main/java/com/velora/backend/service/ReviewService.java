@@ -1,11 +1,14 @@
 package com.velora.backend.service;
 
 import com.velora.backend.dto.review.CreateReviewRequest;
+import com.velora.backend.dto.review.PublicReviewResponse;
 import com.velora.backend.dto.review.ReviewResponse;
 import com.velora.backend.entity.Booking;
 import com.velora.backend.entity.BookingStatus;
 import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.Review;
+import com.velora.backend.entity.Role;
+import com.velora.backend.entity.User;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
@@ -14,7 +17,11 @@ import com.velora.backend.mapper.ReviewMapper;
 import com.velora.backend.repository.BookingRepository;
 import com.velora.backend.repository.ProfessionalProfileRepository;
 import com.velora.backend.repository.ReviewRepository;
+import com.velora.backend.repository.UserRepository;
+import com.velora.backend.util.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +36,28 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final BookingRepository bookingRepository;
     private final ProfessionalProfileRepository professionalProfileRepository;
+    private final UserRepository userRepository;
     private final ReviewMapper reviewMapper;
+
+    /**
+     * Public listing of one professional's reviews, newest first. Same 404-for-either-
+     * reason rule as {@code ProfessionalService.getPublicProfile}: an unknown id and a
+     * real id belonging to a customer both mean "no such public professional", and the
+     * caller doesn't need to be told which. A professional with no reviews yet is a
+     * different thing entirely - that's an empty page, not a 404.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<PublicReviewResponse> getProfessionalReviews(Long professionalId, Pageable pageable) {
+        User professional = userRepository.findById(professionalId)
+                .filter(user -> user.getRole() == Role.PROFESSIONAL)
+                .orElseThrow(() -> new ResourceNotFoundException("Professional not found: " + professionalId));
+
+        Page<PublicReviewResponse> page = reviewRepository
+                .findByProfessionalId(professional.getId(), pageable)
+                .map(reviewMapper::toPublicResponse);
+
+        return PageResponse.from(page);
+    }
 
     @Transactional
     public ReviewResponse createReview(Long customerId, Long bookingId, CreateReviewRequest request) {
