@@ -278,6 +278,7 @@ All endpoints are prefixed `/api`. Protected endpoints require
 | GET | `/bookings/{id}` | participant | Booking detail |
 | PATCH | `/bookings/{id}/cancel` | CUSTOMER (owner) | Cancel a PENDING_ASSIGNMENT/PENDING/CONFIRMED booking |
 | PATCH | `/bookings/{id}/status` | PROFESSIONAL (assigned) | PENDING→CONFIRMED/CANCELLED, CONFIRMED→COMPLETED/CANCELLED |
+| GET | `/bookings/awaiting-assignment?page=&size=` | ADMIN | Admin work queue — bookings still awaiting a professional, oldest first |
 | GET | `/bookings/{id}/recommendations` | ADMIN | Ranked candidate professionals for a booking awaiting assignment |
 | PATCH | `/bookings/{id}/assign` | ADMIN | Assign a professional to a booking awaiting assignment |
 </details>

@@ -16,15 +16,21 @@ import com.velora.backend.repository.BookingRepository;
 import com.velora.backend.repository.CategoryRepository;
 import com.velora.backend.repository.PortfolioItemRepository;
 import com.velora.backend.repository.UserRepository;
+import com.velora.backend.util.PageResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -279,5 +285,42 @@ class BookingServiceTest {
 
         assertThat(response.status()).isEqualTo(BookingStatus.PENDING_ASSIGNMENT);
         assertThat(response.requestType()).isEqualTo(RequestType.INDIVIDUAL_SERVICE);
+    }
+
+    @Test
+    void awaitingAssignmentQueueReturnsOnlyPendingAssignmentBookings() {
+        Pageable pageable = PageRequest.of(0, 20);
+        Booking waiting = Booking.builder()
+                .id(200L)
+                .customer(customer)
+                .requestType(RequestType.INDIVIDUAL_SERVICE)
+                .status(BookingStatus.PENDING_ASSIGNMENT)
+                .scheduledAt(Instant.now().plus(2, ChronoUnit.DAYS))
+                .createdAt(Instant.now())
+                .build();
+        when(bookingRepository.findByStatus(BookingStatus.PENDING_ASSIGNMENT, pageable))
+                .thenReturn(new PageImpl<>(List.of(waiting), pageable, 1));
+
+        PageResponse<BookingResponse> page = bookingService.getBookingsAwaitingAssignment(pageable);
+
+        assertThat(page.totalElements()).isEqualTo(1);
+        assertThat(page.content()).singleElement()
+                .satisfies(booking -> {
+                    assertThat(booking.id()).isEqualTo(200L);
+                    assertThat(booking.status()).isEqualTo(BookingStatus.PENDING_ASSIGNMENT);
+                    assertThat(booking.professionalId()).isNull();
+                });
+    }
+
+    @Test
+    void awaitingAssignmentQueueIsEmptyWhenNothingIsWaiting() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(bookingRepository.findByStatus(BookingStatus.PENDING_ASSIGNMENT, pageable))
+                .thenReturn(Page.empty(pageable));
+
+        PageResponse<BookingResponse> page = bookingService.getBookingsAwaitingAssignment(pageable);
+
+        assertThat(page.content()).isEmpty();
+        assertThat(page.totalElements()).isZero();
     }
 }

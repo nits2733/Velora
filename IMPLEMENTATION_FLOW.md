@@ -1544,6 +1544,19 @@ a **ranked recommendation, not a silent auto-assign** — the admin still makes 
 call, deliberately, so a bad or unavailable match never gets committed without a human
 confirming it.
 
+**Step 0 — the queue:** `GET /api/bookings/awaiting-assignment?page=&size=`,
+`@PreAuthorize("hasRole('ADMIN')")`, paginated, sorted `createdAt` **ascending** so the
+longest-waiting booking is first — this is a work queue, not a browsing list, and the
+oldest unassigned request is the one most in need of attention.
+
+This is what makes the rest of this section reachable at all. `GET /api/bookings` answers
+*"which bookings are mine?"* — it branches on the caller's role between
+`findByCustomerId` and `findByProfessionalId`, and an admin is a participant in neither,
+so an admin calling it gets an empty page. Without a queue endpoint an admin would need to
+already know a booking id to assign it, which is no workflow at all.
+`BookingService.getBookingsAwaitingAssignment` is therefore kept separate rather than
+folded into `getBookingsForUser`: different question, different audience, no caller scoping.
+
 **Endpoint:** `GET /api/bookings/{id}/recommendations`, `@PreAuthorize("hasRole('ADMIN')")`.
 
 **`ProfessionalMatchingService.recommend`:**
@@ -2194,6 +2207,7 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | GET | `/api/bookings/{id}` | Yes | — | Get one booking's details (must be a participant) |
 | PATCH | `/api/bookings/{id}/cancel` | Yes | CUSTOMER | Cancel your own booking (PENDING_ASSIGNMENT/PENDING/CONFIRMED) |
 | PATCH | `/api/bookings/{id}/status` | Yes | PROFESSIONAL | Advance a booking's status (only if you're the assigned professional) |
+| GET | `/api/bookings/awaiting-assignment` | Yes | ADMIN | The admin work queue: bookings still awaiting a professional, oldest first |
 | GET | `/api/bookings/{id}/recommendations` | Yes | ADMIN | Rank candidate professionals for a booking awaiting assignment |
 | PATCH | `/api/bookings/{id}/assign` | Yes | ADMIN | Assign a professional to a booking awaiting assignment |
 | PUT | `/api/bookings/{bookingId}/quotation` | Yes | PROFESSIONAL | Create or replace a draft quotation for a booking (assigned professional only) |
@@ -2699,7 +2713,18 @@ Unavailable professionals are excluded before scoring, and the same 100-point fo
 applies to every trade.
 
 ```
-Admin requests rankings for a booking
+Admin opens the work queue
+ (GET /api/bookings/awaiting-assignment)
+        │
+        ▼
+List every booking still in PENDING_ASSIGNMENT, oldest first
+ (paginated — not scoped to the admin, who is a participant in none of them)
+        │
+        ▼
+Admin picks one booking from the queue
+        │
+        ▼
+Admin requests rankings for that booking
         │
         ▼
 Is this booking currently PENDING_ASSIGNMENT?

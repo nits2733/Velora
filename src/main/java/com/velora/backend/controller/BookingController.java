@@ -64,6 +64,19 @@ public class BookingController {
         return ResponseEntity.ok(bookingService.getBookingsForUser(principal.getId(), principal.getRole(), pageable));
     }
 
+    @GetMapping("/awaiting-assignment")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "List bookings awaiting professional assignment, oldest first (admin only)")
+    public ResponseEntity<PageResponse<BookingResponse>> awaitingAssignment(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.ASC, "createdAt"));
+
+        return ResponseEntity.ok(bookingService.getBookingsAwaitingAssignment(pageable));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get a single booking's details")
     public ResponseEntity<BookingResponse> getById(@AuthenticationPrincipal UserPrincipal principal,

@@ -139,6 +139,19 @@ public class BookingService {
         return PageResponse.from(bookings.map(bookingMapper::toResponse));
     }
 
+    /**
+     * The admin work queue: every booking still waiting for someone to be assigned to it.
+     * Deliberately not folded into {@link #getBookingsForUser} - that one answers "which
+     * bookings are mine?", scoped to the caller, and an admin is a participant in none of
+     * them. This answers "which bookings need me?", which is a different question with a
+     * different audience.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<BookingResponse> getBookingsAwaitingAssignment(Pageable pageable) {
+        Page<Booking> bookings = bookingRepository.findByStatus(BookingStatus.PENDING_ASSIGNMENT, pageable);
+        return PageResponse.from(bookings.map(bookingMapper::toResponse));
+    }
+
     @Transactional(readOnly = true)
     public BookingResponse getById(Long userId, Long bookingId) {
         Booking booking = findBooking(bookingId);
